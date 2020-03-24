@@ -1,0 +1,57 @@
+tst Plan:
+
+Test:
+Test 1: no arguments
+
+Test 2fw:
+Copying everthing SAV to SAV, test backup
+MP to MP, test back up off
+
+Test 3fw Copying each item individually.
+3.1fw  seed
+3.2fw  terrain    -verbose
+3.3fw  improvements
+3.4fw  visibility
+3.5fw  ownership
+3.6fw  civ start
+3.7fw  civ view
+3.8fw  body counter
+3.9fw  city_radius
+3.10fw civ view current
+3.11fw fertility calc
+3.12fw fertility calcall
+3.13fw fertility adjust
+3.14fw fertility copy
+3.15fw fertility zero
+
+test 4fw: Arguments that only need one file. (and defaults for these cases)
+4.1fw civ view current
+4.2fw fertiltiy calc
+4.3fw fertility calcall
+4.4fw fertility zero
+
+
+5fw: Defaults.
+5.1fw MP->MP (and creation)
+5.2fw MP->SAV
+5.3fw SAV->MP (and creation)
+5.4fw SAV->SAV
+
+6fw: erroneus
+6.1fw start positions in sav
+5.2fw civ view on MP
+6.3fw mismatched sizes
+6.4fw copies on single file
+
+7fw: test bitfields
+turn on pollution/irrigation for all squares
+set everything visible to white, nothing visible to others
+
+Retest for MGE files.
+
+8: Cross Compatibility
+8.1 test MP ->MGE SAV
+8.2 test MGE SAV-> MP
+8.3 test MGE SAV ->FW SAV
+8.4 test FW SAV -> MGE SAV
+
