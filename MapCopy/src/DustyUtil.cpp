@@ -39,6 +39,8 @@
 // Sep/03/2000  JDR  Copied for generic utilitiy 1.0
 //              JDR  Added additional functions, removed borland specific strncmpi
 // Sep/13/2000  JDR  Released under MPL
+// Feb/10/2005  JDR  Removed non-standard open mode from fileExists()
+// Feb/13/2005  JDR  Added LogOutput class
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <string>
@@ -95,9 +97,13 @@ string DustyUtil::copy_to_upper(const string s)
 bool DustyUtil::fileExists(const string filename)
 {
     ifstream i;
-    i.open(filename.c_str(), ios::nocreate);
+    i.open(filename.c_str());
     if (i) return true;
     else return false;
     // Note i's destructor will close file
 }
 
+//////////////// Log output //////////////////////////////////////////////
+ostream* DustyUtil::LogOutput::stream = NULL;
+bool DustyUtil::LogOutput::enabled = false;
+ostream DustyUtil::LogOutput::nullStream(new nullBuf());

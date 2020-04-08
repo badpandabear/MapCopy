@@ -38,13 +38,17 @@
 //                    string case functions. Promoted to version 1.0
 //                    Renamed to: DustyUtil
 // Sep/13/2000  JDR   Released under MPL
+// Feb/10/2005  JDR   Changes for mingw compiler, removed unncessary array 
+//                    operators.
+// Feb/13/2005  JDR   Added debug output utility class and methods.
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifndef DUSTYUTIL_H_
 #define DUSTYUTIL_H_
 
-#include <stddef>
-
+#include <stddef.h>
+#include <sstream>
+#include <string>
 using namespace std;
 
 namespace DustyUtil
@@ -70,9 +74,9 @@ namespace DustyUtil
     class SmartPointer
     {
         public:
-            // Construct with a pointer
-            SmartPointer(T *ptr)
-            {
+        // Construct with a pointer
+        SmartPointer(T *ptr)
+        {
             pointer=ptr;
         }
 
@@ -152,14 +156,6 @@ namespace DustyUtil
         {
             return pointer;
         }
-        T& operator[](unsigned int i)
-        {
-            return pointer[i];
-        }
-        const T& operator[](unsigned int i) const
-        {
-            return pointer[i];
-        }
 
         // Check to see if the interface pointer is NULL
         bool isNull() const
@@ -194,6 +190,39 @@ namespace DustyUtil
         T *pointer;
     };
 
+    // Utility methods for output that's enabled/disabled by a global verbose
+    // settings.  This has all static members and cannot be instantiated.
+    // Future enhancements could be to support multiple output streams
+    // (aka log files and stdout), multiple levels of logging (debug vs error)
+    // perhaps with different levels going to different streams.
+    class LogOutput
+    {
+        public:
+        static void setOutputStream(ostream& outputStream)
+        { stream = &outputStream; }
 
+        static void setEnabled(bool b)         
+        { enabled = b; }
+
+        static ostream& log()
+        {
+            if (enabled) return *stream;
+            else return nullStream;
+        }
+
+        private:
+
+        static ostream* stream;
+        static ostream nullStream;
+        static bool enabled;
+    };
+
+    // This is a "null" stream buf that reads nothing and writes nothing
+    class nullBuf : public streambuf
+    {
+        public:
+            nullBuf() { }
+    };
 }
 #endif
+

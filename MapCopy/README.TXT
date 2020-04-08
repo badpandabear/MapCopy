@@ -1,9 +1,11 @@
-README.TXT for MapCopy 1.beta1  
-Copyright (C) 2000, James Dustin Reichwein, All Rights Reserved.
+README.TXT for MapCopy 1.2beta1  
+Copyright (C) 2000,2005, James Dustin Reichwein, All Rights Reserved.
 
 Contents
 
+What's New
 Introduction
+I would like to thank...
 File List
 Command Line Arguments
 Examples
@@ -12,40 +14,58 @@ Future Ideas
 Beta Report Form
 Working with the Source Code
 
+What's New
+
+  This version of MapCopy adds support for saved games from versions of Civ2
+  prior to Fantastic Worlds, and for Test of Time saved games (including 
+  multiple map support). It also can copy or modify the resource spression flag 
+  seperately from the terrain type. See below for more.
+
+  WARNING: The new functionality in this version has had only a minimal amount
+  of testing.  Therefore be extra careful to backup your work.
 
 Introduction
 
   MapCopy is a utility for copying map information between Civ2 saved game files
-  and saved map files.  It supports Fantastic Worlds and Multiplayer Gold 
-  Edition files, and has been tested on on Windows 98 and Windows NT 4.0.  It 
-  WILL NOT support MS-DOS or Windows 3.1. Nor will it support versions
-  of Civ 2 prior to Fantastic Worlds, or TOT. It is able to copy resource seed, 
-  terrain, improvement, visibility, ownership, civ specific view, fertility, and 
-  other types of information between .SAV files and .MP files. It can also 
-  calculate values for fertility if needed.  These features are described in 
-  more detail below.
+  and saved map files.  It supports all versions of Civ2, and has been tested 
+  on Windows XP SP2.  It WILL NOT support MS-DOS or Windows 3.1. 
+  It is able to copy resource seed, terrain, improvement, visibility, ownership, 
+  civ specific view, fertility, and other types of information between .SAV 
+  files and .MP files. It can also calculate values for fertility if needed.  
+  These features are described in more detail below.
 
-  This software is open source Freeware.  The source code is released under
-  the Mozilla Public License (MPL), and is included in this archive. This 
-  archive may also be distributed electronically.  If you choose to place this 
-  archive on a web or FTP server, I would appreciate being notified so that I 
-  can notify you of new versions.
+  This software is open source.  The source code is released under
+  the Mozilla Public License (MPL), which is included in this archive in the
+  LICENSE.TXT file. This archive may be distributed freely on physical 
+  media or electronically.  If you choose to place this archive on a web or 
+  FTP server, I would appreciate being notified so that I can notify you of new 
+  versions.
 
   This software is BETA quality. I have tested it as much as I can, but there 
-  are probably still problems with this software.  I therefore ask that you fill 
-  out the Beta Report Form included in this document, EVEN IF YOU ENCOUNTER NO 
-  PROBLEMS.  Reports from people successfully using this utility give me an 
-  indication of how mature it has become, and also tell me if it is worth 
-  continuing development on MapCopy.
+  are probably still problems with this software.  
+
+  The author of MapCopy can be contacted at jreichwe@san.rr.com, or as "Dusty"
+  at the CivFanatics forums (http://www.civfanatics.com/) and Apolyton forums 
+  (http://apolyton.net/).
 
   The most recent version of MapCopy can be found at: 
   http://home.san.rr.com/dustyr/download/mapcopy.zip
 
   For additional information on the contents of saved game file, I recommend
-  Allard Höfelt's document at http://allard.8m.com/hexediting.htm. Without that
-  document this utility would never have happened.
+  Allard Höfelt's hex editing document. The latest version (that I could find)
+  of this is at Mercator's Civilization 2 Site 
+  (http://www.civgaming.net/mercator/) in the Reference section.
 
-  The author of MapCopy can be contacted at jreichwe@san.rr.com
+I would like to thank...
+
+  Allard Höfelt for making the hex editing document.
+
+  Jorrit "Mercator" Vermeiren for adding adding additional functionality to 
+  MapCopy and for providing much information about ToT saved game files.
+
+  And my imaginary friends. Except for Molly. Who is mean to me. WHAT? Why are
+  looking at me like that?
+ 
 
 File List
 
@@ -57,6 +77,7 @@ File List
       mapcopy.cpp
       civ2sav.h
       civ2sav.cpp
+      civ2map.cpp
       DustyUtil.h
       DustyUtil.cpp
 
@@ -74,13 +95,13 @@ Command Line Syntax.
  
   Options: +x turns option x on, -x turns option x off.
            -x:AAA or +x:AAA performs action AAA for an option.
-	   All options are case insensitive.
+  All options are case insensitive. 
 
     s[eed]        Copies the resource seed.
     t[errain]     Copies the terrain data.
     i[mprovement] Copies terrain improvements.
     v[isibility]  Copies terrain visibility.
-    o[wnership]   Copies terrain owner ship.
+    o[wnership]    Copies terrain owner ship.
     cs            Copies civilization start locations from an MP file.
     bc            Copies "body counter" values for continents.
     cr            Copies "city radius" data for terrain.
@@ -89,15 +110,25 @@ Command Line Syntax.
     /? or -h      Displays help screen.
     f[ertility][:CALC|CALCALL|ADJUST|ZERO]
                   Copies or calculates fertility data for terrain.
-		  :CALC     Calculates fertility data for grasslands and plains.
-		  :CALCALL  Calculates fertility data for all terrain.
-		  :ADJUST   Copies fertility data, adjusting for the presence of
-		            cities.
+                  :CALC     Calculates fertility data for grasslands and plains.
+                  :CALCALL  Calculates fertility data for all terrain.
+                  :ADJUST   Copies fertility data, adjusting for the presence of
+                            cities.
                   :ZERO     Sets fertility data to 0 for all squares.
     cv[:CURRENT]  Copies civ specific visible terrain improvement data.
                   :CURRENT  Sets the civ specific visible improvement data so
                             that all civilizations see the most up to date
-			    improvements.
+                            improvements.
+    rs[:SET|:CLEAR] Copies, sets, or clears resource supression.
+    sm:n | sm:ALL   Specifies which map in a multimap ToT saved game is being
+                    copied from. "n" can range from 1 to 4. Only map 1 is 
+                    allowed if the source is not a ToT saved game.  
+                    "ALL" specifies all maps in a ToT saved game.
+    dm:n | dm:ALL   Specifies which map in a multimap ToT saved game is being
+                    copied to. "n" can range from 1 to 4. Only map 1 is allowed 
+                    if the destination is not a ToT saved game. 
+                    "ALL" will copy over all maps.  See Multimap Copies below
+                    for more information.
 
     The default value of options is determined by the type of copy being 
     performed.  The below table describes their default values.
@@ -115,9 +146,12 @@ Command Line Syntax.
     backup      ON       ON         ON        ON        ON     ON  
     fertility   COPY     ADJUST     CALC      OFF       OFF    OFF
     cv          OFF      OFF        OFF       OFF       OFF    OFF 
+    rs          COPY     COPY       COPY      COPY      OFF    OFF
 
+    For copies between two ToT saved games the sm and dm options default to 
+    "ALL".  In all other cases they default to 1.
 
-Examples:
+Examples: 
 
   mapcopy ca_b4000.sav ca_b4000.mp
 
@@ -128,7 +162,7 @@ Examples:
  mapcopy biggrass.mp ca_b4000.sav -s +t -backup -verb
 
     Copies the terrain and body counter information from biggrass.mp to
-    ca_b4000.sav.  No backup will be created and extra information will not be
+    ca_b4000.sav.  No backup will be created and extra information will not be 
     printed to the screen.
 
   mapcopy ca_b4000.sav -f:CALCALL
@@ -136,6 +170,17 @@ Examples:
     Calculates new fertility information for all terrain squares in ca_b4000.sav
     A backup file will be created.
 
+  mapcopy ca_b4000.sav ca_a4000.sav -sm:2 -dm:4
+
+     Copies the second map from a ToT saved game to the fourth map in another
+     ToT saved game.
+   
+  mapcopy ca_b4000.sav +sm:1 +dm:2 -rs:CLEAR
+
+      Copies the first map in a ToT saved game to the second map in the same
+      saved game. (If there is no second map, this will create one). 
+      This also clears the resource suppression flag from all squares in the
+      second map, so all resources will be visible. 
 
 Description of Features
 
@@ -146,7 +191,8 @@ Allard's hex editing document.
 Resource Seed (+s)
 
 The resource seed controls the placements of resources, huts, and grassland 
-shields.  Note that this can also be set in the Map Editor.
+shields.  Note that this can also be set in the Map Editor.  In ToT files,
+each map has its own resource seed, which is also copied by the +s option.
 
 Terrain (+t)
 
@@ -190,12 +236,21 @@ The number next to the square's location is its body counter.
 Note that if you are copying from a .MP file to a .SAV file, I recommend 
 validating the .MP file before saving it.  This will cause the Map Editor 
 to calculate Body Counters for continents.  Failure to do so may cause trade
-routes to behave strangely.
+routes to behave strangely. (For additional information for ToT saved games
+see the Multi-Map Copies section below).
 
 City Radius (+cr)
 
 This information determines which squares are within the city radius of a city
 of a given civilization.   I'm not sure what this is used for.
+
+Resource Suppression (+rs)
+
+This information determines whether a resource that would normally be on the
+square is made invisible.  For example, this bit prevents whales and fish
+from being seen in the middle of the ocean.  +rs:SET will set this bit for
+all squares, eliminating all special resources from the game. +rs:CLEAR will
+clear this bit, allowing all special resources to be seen for all sqares.
 
 Fertility (+f)
 
@@ -272,6 +327,34 @@ Note that Civ Specific View information is not stored in .MP files, attempts
 to copy this information to or from a .MP file will fail, causing MapCopy to
 print an error message.
 
+
+Multi-Map Copies (+sm/+dm)
+
+Civilization 2: Test of Time allows games to contain multiple maps. MapCopy 
+supports copying into an arbitrary map of a ToT saved game (set with the +dm 
+option) from a pre-ToT saved game, a .MP file, or an arbitrary map of another
+ToT saved game (set with the +sm) options.  You can also copy all of the maps
+from ToT saved game to another using "+sm:ALL +dm:ALL", which is the default
+when copying from one ToT saved game to another. You can also copy over all 
+maps in a ToT saved game from a single map in a ToT saved game, 
+a pre-ToT saved game, or a .MP file using "+sm:n +dm:ALL".
+
+In cases where the specified map number does not exist in the destination, 
+it will be added to the destination if the number would not create a "gap" in
+the destination file. For example, if "+sm:1 +dm:3" is used, and the
+destination file has two maps, then a new map will be added in position 3.
+If the destination file only had one map, it would be an error because there
+would be a gap in map position 2.  Maps will also be created in the destination
+file if "ALL" is used and the destination file has fewer maps than the source
+file.  If the destination has more, then the extra maps in the destination will
+not be affected.
+
+In ToT, the body counter of continents depends on what map it is on. For map 1,
+they range from 0 to 63. For map 2, 64-127, map 3, 128-191, and map 4, 192-255.
+So in doing a multimap copy MapCopy will adjust the body counter according to 
+what map position is being written to in the destination file.
+
+
 Future Ideas 
 
 Below are ideas for future improvements to MapCopy, or for future Civ 2
@@ -279,53 +362,36 @@ related utilities. Let me know if you like these ideas.
 
 1.  Add the ability to copy units and cities to MapCopy.
 
-2.  I've considered a command line utility for scenario writers that would
+2.  Add the ability to specify a range of squares to copy between maps.
+    aka -sr1:1:20:20 -dr31:31:40:40 would copy squares ranging from 1,1
+    to 20,20 (in Civ2 coordinates) to the squares 31,31 to 40,40 on the
+    destination map.
+
+3.  I've considered a command line utility for scenario writers that would
     accept a script file for altering saved games. For example, the following
     script might cut every Roman citiy's population in half.
 
-        foreach city do
-	    if city.owner = Romans then
-	       city.population = city.population / 2
-	    endif
-	endfor
+    foreach city do
+        if city.owner = Romans then
+            city.population = city.population / 2
+        endif
+    endfor
 
-3.  Of course, I could always write The One True Civ2 Scenario Editor, which
+4.  Of course, I could always write The One True Civ2 Scenario Editor, which
     would provide a nice GUI for editing all features of maps, cities, units, 
-    events, etc.  Of course, by the time it gets finished Civ 5 will be out.
+    events, etc.  Of course, by the time it gets finished Civ 10 will be out.
 
-Beta Report Form
+Reporting bugs
 
   This is BETA quality software.  To iron out any wrinkles that are left in it,
-  I need feedback from users.  If you have used this beta version of MapCopy,
-  I would appreciate it if you would fill out the below form and e-mail it
-  to jreichwe@san.rr.com.  Please fill it out even if you encounter no problems
-  with MapCopy.  This allows me to tell if MapCopy is mature enough for a final
-  release, or if MapCopy is not used by anyone (and therefore should not be
-  developed further).
+  I need feedback from users.  If you find a bug in MapCopy, I need detailed 
+  feedback. For example:
 
-  ------------------------------------------------------------------------------
-  MapCopy v1.beta1 Beta Report Form
-
-  Do you find MapCopy to be useful?
-
-  Are there any features you wish it had?
-
-  Are there any features you wish it didn't have?
-
-  Please Describe any problems you've had with MapCopy. Include bugs in MapCopy,
-  mistakes in the documentation, or strange Game/AI behavior on any games modified 
-  by MapCopy.  For each problem please include:
-
-   * A detailed description of the problem
-   * Indicate which version of Civ 2 you are working with (MGE, or FW). Note
-     that MapCopy will not work with versions of Civ 2 prior to FW, nor will
-     it work with TOT.
-   * A description of how to reproduce the problem.  If possible include any
+   * Indicate which version of Civ 2 you are working with (MGE, or FW). 
+   * Indicate what operating system you are working on.
+   * A detailed description of how to reproduce the problem.  If possible include any
      .MP or .SAV files that are causing problems.
    
-  Any Other Comments?
-
-  ------------------------------------------------------------------------------
 
 Working with the Source Code
 
@@ -344,18 +410,10 @@ Working with the Source Code
 
   Building MapCopy
 
-    MapCopy is written to be fully ANSI C++ compliant. Unfortunately, it is hard
-    to find fully ANSI C++ compliant compilers. The compiler I used is 
-    the free Borland C++ 5.5 compiler, available at 
-    http://www.borland.com/bcppbuilder/freecompiler/.  This compiler has a bug
-    in its fstream library, in the fstream.cc file.  I was able to fix this bug,
-    but the code is copyrighted so that I cannot redistribute it.  As a result,
-    I have not enclosed a Makefile.  You may find that another C++ compiler may
-    compile MapCopy without problems. Be alert for compatibilities with the
-    STL or string class.
-
-    If you wish to compile MapCopy using the Borland C++ 5.5 compiler, e-mail
-    me at jreichwe@san.rr.com and I will send you the changes I made to
-    fstream.cc.
+    MapCopy is written to be fully ANSI C++ compliant. Unfortunately, that isn't
+    enough to make a program portable to different compilers. This Beta version
+    of MapCopy was compiled using the Dev-C++4.9.9.1 IDE, which uses the MinGW
+    compiler. See http://www.bloodshed.net/ for information on Dev-C++ and 
+    http://www.mingw.org/ for information on MinGW.
 
 Good Luck, and I hope you find this software useful!

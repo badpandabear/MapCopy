@@ -28,17 +28,20 @@
 //
 // Revision History:
 // Sep/13/2000  JDR  Initial 1.Beta1 version.
-
+// Feb/10/2005  JDR  Changes for compatability with GCC based mingw compiler.
+// Feb/13/2005  JDR  Added options for resource supression
+// Feb/20/2005  JDR  1.2Beta1 release of ToT multi-map support
+#include <iostream>
 #include <fstream>
 #include <string>
-#include <DustyUtil.h>
+#include "DustyUtil.h"
 #include "civ2sav.h"
 
 
 const char *versionText[] =
 {
-    "MapCopy Version 1.Beta1",
-    "Written By James Dustin Reichwein, Copyright (C) 2000. All Rights Reserved.",
+    "MapCopy Version 1.2Beta1",
+    "Written By James Dustin Reichwein, Copyright (C) 2000,2005. All Rights Reserved.",
     NULL
 };
 const char *helpText[] =
@@ -48,20 +51,23 @@ const char *helpText[] =
     "  Copies the Civ2 map from file \"source\" to file \"dest\".",
     "  See readme.txt for more information.",
     "  Options: (+x turns option x on. -x turns option x off.) ",
-    "    s[eed]        Copies the resource seed.",
-    "    t[errain]     Copies the terrain data.",
-    "    i[mprovement] Copies terrain improvements.",
-    "    v[isibility]  Copies terrain visibility.",
-    "    o[wnership]   Copies terrain owner ship.",
-    "    cs            Copies civilization start locations from an MP file.",
-    "    bc            Copies \"body counter\" values for continents.",
-    "    cr            Copies \"city radius\" data for terrain.",
-    "    v[erbose]     Enables informative screen messages.",
-    "    b[ackup]      Creates of a backup named \"dest.bak\". (on by default)",
-    "    /? or -h      Displays this help screen.",
+    "    s[eed]          Copies the resource seed.",
+    "    t[errain]       Copies the terrain data.",
+    "    i[mprovement]   Copies terrain improvements.",
+    "    v[isibility]    Copies terrain visibility.",
+    "    o[wnership]     Copies terrain owner ship.",
+    "    rs[:SET|:CLEAR] Copies or sets resources supression.",
+    "    cs              Copies civilization start locations from an MP file.",
+    "    bc              Copies \"body counter\" values for continents.",
+    "    cr              Copies \"city radius\" data for terrain.",
+    "    v[erbose]       Enables informative screen messages.",
+    "    b[ackup]        Creates of a backup named \"dest.bak\". (on by default)",
+    "    /? or -h        Displays this help screen.",
     "    f[ertility][:CALC|CALCALL|ADJUST|ZERO]",
-    "                  Copies or calculates fertility data for terrain. ",
-    "    cv[:CURRENT]  Copies civ specific visible terrain improvement data.",
+    "                    Copies or calculates fertility data for terrain. ",
+    "    cv[:CURRENT]    Copies civ specific visible terrain improvement data.",
+    "    sm:n or sm:ALL  Picks which map in a multi-map ToT file to copy from.",
+    "    dm:n or dm:ALL  Picks which map in a multi-map ToT file to copy to.",
     NULL
 };
 
@@ -71,8 +77,9 @@ namespace
 {
     enum OPTIONS { SEED = 0, TERRAIN, IMPROVEMENT, VISIBILITY, OWNERSHIP,
                    CIV_START, BODY_COUNTER, CITY_RADIUS, VERBOSE, BACKUP,
-                   FERTILITY, CIV_VIEW, NUM_OPTIONS };
-    enum OP_VALUE { OFF=0, ON=1, COPY=1, CALC, CALCALL, ADJUST, CURRENT, ZERO };
+                   FERTILITY, CIV_VIEW, RESOURCE_SUP, NUM_OPTIONS };
+    enum OP_VALUE { OFF=0, ON=1, COPY=1, CALC, CALCALL, ADJUST, CURRENT, ZERO,
+                    SET, CLEAR };
 
     // The options
     OP_VALUE options[NUM_OPTIONS];
@@ -95,13 +102,20 @@ namespace
         /* verbose */     { ON,      ON,        ON,       ON,      ON,  ON}, 
         /* backup */      { ON,      ON,        ON,       ON,      ON,  ON}, 
         /* fertility */   { COPY,    ADJUST,    CALC,     OFF,     OFF, OFF},
-        /* civ_view */    { OFF,     OFF,       OFF,      OFF,     OFF, OFF} 
+        /* civ_view */    { OFF,     OFF,       OFF,      OFF,     OFF, OFF},
+        /* resource 
+           supression */  { COPY,    COPY,      COPY,     COPY,    OFF, OFF}
     };
 
 
     // The source and destination files
     string sourceFile = "";
     string destFile = "";
+
+    // The source and destination maps for ToT multimap saved games.
+    // Note 0 equals "all", -1 equals "default"
+    int sourceMap = -1;
+    int destMap = -1;
 
     // The type of copy
     COPYTYPE copy_type = MP2MP;
@@ -111,6 +125,7 @@ namespace
 }
 
 void setDefaults();
+void setMapDefaults(bool oneSupprtsMultiMaps, bool twoSupportsMultiMaps);
 void parseCommandLine(int argc, char *argv[]);
 int parseFileNames(int argc, char *argv[]);
 void parseOptions(int i, int argc, char *argv[]);
@@ -118,12 +133,17 @@ void checkArgumentValidity();
 void printText(const char *text[]);
 void printErrorMessage(const string message);
 void backupFile(string file) throw (runtime_error);
+void doMapCopy(const Civ2Map& source, Civ2Map& dest) throw(runtime_error);
 
 int main(int argc, char *argv[])
 {
-    Civ2SavedGame one;
-    Civ2SavedGame two;
+    Civ2SavedGame sourceSavedGame;
+    Civ2SavedGame destSavedGame;
 
+    // I'm using pointers for one and two so that for an inplace modification
+    // I can set the source (one) equal to the destination
+    Civ2SavedGame *one = &sourceSavedGame;
+    Civ2SavedGame *two = &destSavedGame;
 
     try
     {
@@ -132,167 +152,152 @@ int main(int argc, char *argv[])
         parseCommandLine(argc, argv);
         
         // This tells the Civ2SavedGame objects whether to print detailed messages
-        one.setVerbose(options[VERBOSE] == ON ? true : false);
-        two.setVerbose(options[VERBOSE] == ON ? true : false);
+        if (options[VERBOSE]== ON)
+        {
+            LogOutput::setOutputStream(cout);
+            LogOutput::setEnabled(true);
+        }
 
         if (options[BACKUP] == ON) backupFile(destFile);
 
         // Load a source file if one is provided
-        if (copy_type != MP && copy_type != SAV) one.load(sourceFile);
-
+        if (copy_type != MP && copy_type != SAV) 
+        {
+            one->load(sourceFile);
+        }
+        else // An in-place modification
+        {
+            one = two;
+        }
         if (fileExists(destFile))
         {
-            two.load(destFile);
+            two->load(destFile);
         }
         else if (Civ2SavedGame::isMPFile(destFile))
         {
-            two.createMP(one.getWidth(), one.getHeight());
+            two->createMP(one->getWidth(), one->getHeight());
         }
         else
         {
-            two.createSAV(one.getWidth(), one.getHeight());
+            two->createSAV(one->getWidth(), one->getHeight());
         }
 
         // Confirm maps are the same size.
-        if (copy_type != MP && copy_type != SAV)
+        if (one->getWidth() != two->getWidth() ||
+            one->getHeight() != two->getHeight())
         {
-            if (one.getWidth() != two.getWidth() ||
-                one.getHeight() != two.getHeight())
-            {
-                throw runtime_error("Both maps must be the same size!");
-            }
+            throw runtime_error("Both maps must be the same size!");
         }
 
-        // Copy resource seed.
-        if (options[SEED]==COPY) two.setSeed(one.getSeed());
+        // Setup default for ToT to ToT copies to be "all"
+      
+        setMapDefaults(one->supportsMultiMaps(), two->supportsMultiMaps());
 
+        // Check for an ALL copy that would require a non-ToT saved game
+        // to support multiple maps
+        if (sourceMap == 0 && sourceMap > two->getNumMaps()&& two->supportsMultiMaps() == false)
+        {
+            throw runtime_error("Cannot create multiple maps in a non-ToT saved game.");
+        }
+
+        // Check for a map to map copy that would require a non-ToT saved game
+        // to support multiple maps
+        if(destMap > 1 && two->supportsMultiMaps() == false)
+        {
+            throw runtime_error("Cannot create multiple maps in a non-ToT saved game.");
+        }
+
+        // Check for a non-existant source map
+        if (sourceMap > one->getNumMaps()) 
+        {
+            throw runtime_error("Map specified with +sm does not exist within source file.");
+        }
+
+        // Check for a copy that creates a "gap" in the destination
+        if (destMap > two->getNumMaps() + 1) 
+        {
+            throw runtime_error("Cannot create a gap between maps in a ToT saved game.");
+        }
+
+        // Copy main resource seed.
+        if (options[SEED]==COPY) two->setSeed(one->getSeed());
+
+        // Copy civilization start positions
         if (options[CIV_START] == COPY)
         {
-            two.setCivStart(one.getCivStart());
+            two->setCivStart(one->getCivStart());
         }
 
-        // Iterate through map squares, copying info
-        // Note that due to the nature of Civ2 maps, not every combination
-        // of X and Y is valid.  Specifically, x+y must be even.
-        // Also note that this is going through the coordinate system as
-        // seen in Civ2, not in the MapEditor
-        for (int y = 0; y < two.getHeight(); y++)
+
+        // There are three types of copies.
+
+        // First type: Copying one source map into one destination map
+        if (sourceMap > 0 && destMap > 0)
         {
-            for (int x = y % 2; x < two.getWidth(); x+=2)
+            // Note sourceMap and destMap are one based, while the indices
+            // used by addMap() and getMap() are zero based.
+
+            if (destMap > two->getNumMaps())
             {
-                // Terrain includes terrain type, the river flag, and
-                // Whether resources are hidden
-                if (options[TERRAIN]==COPY)
+                LogOutput::log() << "Adding map " << destMap << " to " << destFile << endl;
+
+                two->addMap(destMap  - 1); // Add additional map to destination
+                                          // if needed
+            }
+
+            LogOutput::log() << "Copying map " << sourceMap << " to " << destMap << endl;            
+
+            // Do the actual copy.
+            doMapCopy(one->getMap(sourceMap - 1), two->getMap(destMap - 1));
+
+        }
+        // Second type: Copying multiple source maps into the destination file
+        else if (sourceMap == 0 && destMap == 0)
+        {
+            for (int i = 0; i < one->getNumMaps(); i++)
+            {
+                if (i >= two->getNumMaps())
                 {
-                    two.setRiver(x, y, one.isRiver(x, y));
-                    two.setResourceHidden(x, y, one.isResourceHidden(x, y));
-                    two.setTypeIndex(x, y, one.getTypeIndex(x, y));
+                    LogOutput::log() << "Adding map " << i + 1 << " to " << destFile << endl;
+
+                    two->addMap(i); // Add additional map to destination
+                                   // if needed
                 }
-                if (options[IMPROVEMENT] == COPY)
-                {
-                    two.setImprovements(x, y, one.getImprovements(x, y));
-                }
-                // This governs what civs see what squares
-                if (options[VISIBILITY] == COPY)
-                {
-                    two.setVisibility(x, y, one.getVisibility(x, y));
-                }
-                if (options[OWNERSHIP] == COPY)
-                {
-                    two.setOwnership(x, y, one.getOwnership(x, y));
-                }
+                LogOutput::log() << "Copying map " << i+1 << " to " << i+1 << endl;            
+                doMapCopy(one->getMap(i), two->getMap(i));
+            }
+        }
+        // Copying multiple source maps into the destination file
+        else if (sourceMap != 0 && destMap == 0)
+        {
+            Civ2Map& source = one->getMap(sourceMap-1);
+            for (int i = 0; i < two->getNumMaps(); i++)
+            {
+                LogOutput::log() << "Copying map " << sourceMap << " to " << i + 1 << endl;  
+                doMapCopy(source, two->getMap(i));
+            }
+        }
+        else
+        {
+            // Really with all the error checking this should never happen.
+            // Of course, that means it will probably happen the first
+            // time I run the program.
+            stringstream message;
+            message << "Unrecognized copy type. sm = " << sourceMap << " dm = " << destMap;
+            throw runtime_error(message.str());
+        }
 
-                // The body_counter is a # assigned to a continent. It
-                // can be calculated by the map editor by doing an analyze map
-                if (options[BODY_COUNTER] == COPY)
-                {
-                    two.setBodyCounter(x, y, one.getBodyCounter(x, y));
-                }
-                if (options[CITY_RADIUS] == COPY)
-                {
-                    two.setCityRadius(x, y, one.getCityRadius(x, y));
-                }
-
-                // Fertility is tricky.
-                switch (options[FERTILITY])
-                {
-                    case COPY:
-                        two.setFertility(x, y, one.getFertility(x, y));
-                        break;
-
-                    case CALC:
-                        if (two.getTypeIndex(x, y) == Civ2SavedGame::GRASSLAND ||
-                            two.getTypeIndex(x, y) == Civ2SavedGame::PLAINS)
-                        {
-                            two.calcFertility(x, y);
-                        }
-                        else two.setFertility(x, y, 0);
-                        break;
-
-                    case CALCALL:
-                        if (two.getTypeIndex(x, y) != Civ2SavedGame::OCEAN)
-                        {
-                            two.calcFertility(x, y);
-                        }
-                        else two.setFertility(x, y, 0);
-                        break;
-
-                    case ADJUST:                      
-                        if (two.getTypeIndex(x, y) != Civ2SavedGame::OCEAN)
-                        {
-                            two.setFertility(x, y, one.getFertility(x, y));
-                            two.adjustFertility(x, y);
-                        }
-                        else two.setFertility(x, y, 0);
-                        break;
-
-                    case ZERO:
-                        two.setFertility(x, y, 0);
-                        break;
-
-                    default:
-                        // Assume off, don't copy
-                        break;
-                }
-
-                // "civ_view" is the improvement information that each civilization
-                // sees.  Each civilization only sees the terrain improvement info
-                // that was current when a unit was near that square.  Hence you
-                // need to reexplore to see what other civs have been up to.
-
-                // If the civ_view option is CURRENT, each civilization will see
-                // the most current improvement information
-                switch(options[CIV_VIEW])
-                {
-                    case CURRENT:
-                        two.setCivView(x, y, Civ2SavedGame::ALL,
-                                       two.getImprovements(x, y));
-                        break;
-
-                    case COPY:
-                        two.setCivView(x, y, Civ2SavedGame::WHITE,
-                                       one.getCivView(x, y, Civ2SavedGame::WHITE));
-                        two.setCivView(x, y, Civ2SavedGame::GREEN,
-                                       one.getCivView(x, y, Civ2SavedGame::GREEN));
-                        two.setCivView(x, y, Civ2SavedGame::BLUE,
-                                       one.getCivView(x, y, Civ2SavedGame::BLUE));
-                        two.setCivView(x, y, Civ2SavedGame::YELLOW,
-                                       one.getCivView(x, y, Civ2SavedGame::YELLOW));
-                        two.setCivView(x, y, Civ2SavedGame::CYAN,
-                                       one.getCivView(x, y, Civ2SavedGame::CYAN));
-                        two.setCivView(x, y, Civ2SavedGame::ORANGE,
-                                       one.getCivView(x, y, Civ2SavedGame::ORANGE));
-                        two.setCivView(x, y, Civ2SavedGame::PURPLE,
-                                       one.getCivView(x, y, Civ2SavedGame::PURPLE));
-                        break;
-
-                    default: // Assume off
-                        break;
-                }
-            } // end inner for
-        } // end outer for
-
-        two.save(destFile);
+        // if the destination does not support multiple maps, its main map
+        // seed should be set to that of its only map. This is because
+        // non-ToT saved game files (and .MPs) don't support a map specific
+        // resource seed
+        if (two->supportsMultiMaps() == false && options[SEED] == COPY)
+        {
+            two->setSeed(two->getMap(0).getSeed());
+        }
+        
+        // Save the results into the destination file
+        two->save(destFile);
     }
     catch(exception& e)
     {
@@ -315,6 +320,153 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+// Performs a copy between two Civ2Map objects
+void doMapCopy(const Civ2Map& source, Civ2Map& dest) throw(runtime_error)
+{
+    // Copy map specific resource seed
+    if (options[SEED] == COPY) dest.setSeed(source.getSeed());
+
+    // Iterate through map squares, copying info
+    // Note that due to the nature of Civ2 maps, not every combination
+    // of X and Y is valid.  Specifically, x+y must be even.
+    // Also note that this is going through the coordinate system as
+    // seen in Civ2, not in the MapEditor
+    for (int y = 0; y < dest.getHeight(); y++)
+    {
+        for (int x = y % 2; x < dest.getWidth(); x+=2)
+        {
+            // Terrain includes terrain type, and the river flag
+            if (options[TERRAIN]==COPY)
+            {
+                dest.setRiver(x, y, source.isRiver(x, y));
+                dest.setTypeIndex(x, y, source.getTypeIndex(x, y));
+            }
+            if (options[IMPROVEMENT] == COPY)
+            {
+                dest.setImprovements(x, y, source.getImprovements(x, y));
+            }
+            // This governs what civs see what squares
+            if (options[VISIBILITY] == COPY)
+            {
+                dest.setVisibility(x, y, source.getVisibility(x, y));
+            }
+            if (options[OWNERSHIP] == COPY)
+            {
+                dest.setOwnership(x, y, source.getOwnership(x, y));
+            }
+
+            // The body_counter is a # assigned to a continent. It
+            // can be calculated by the map editor by doing an analyze map
+            if (options[BODY_COUNTER] == COPY)
+            {
+                dest.setBodyCounter(x, y, source.getBodyCounter(x, y));
+            }
+
+            if (options[CITY_RADIUS] == COPY)
+            {
+                dest.setCityRadius(x, y, source.getCityRadius(x, y));
+            }
+
+            // Fertility is tricky.
+            switch (options[FERTILITY])
+            {
+                case COPY:
+                    dest.setFertility(x, y, source.getFertility(x, y));
+                    break;
+
+                case CALC:
+                    if (dest.getTypeIndex(x, y) == Civ2Map::GRASSLAND ||
+                        dest.getTypeIndex(x, y) == Civ2Map::PLAINS)
+                    {
+                        dest.calcFertility(x, y);
+                    }
+                    else dest.setFertility(x, y, 0);
+                    break;
+
+                case CALCALL:
+                    if (dest.getTypeIndex(x, y) != Civ2Map::OCEAN)
+                    {
+                        dest.calcFertility(x, y);
+                    }
+                    else dest.setFertility(x, y, 0);
+                    break;
+
+                    case ADJUST:                      
+                    if (dest.getTypeIndex(x, y) != Civ2Map::OCEAN)
+                    {
+                        dest.setFertility(x, y, source.getFertility(x, y));
+                        dest.adjustFertility(x, y);
+                    }
+                    else dest.setFertility(x, y, 0);
+                    break;
+
+                case ZERO:
+                    dest.setFertility(x, y, 0);
+                    break;
+
+                default:
+                    // Assume off, don't copy
+                    break;
+            }
+
+            // "civ_view" is the improvement information that each civilization
+            // sees.  Each civilization only sees the terrain improvement info
+            // that was current when a unit was near that square.  Hence you
+            // need to reexplore to see what other civs have been up to.
+
+            // If the civ_view option is CURRENT, each civilization will see
+            // the most current improvement information
+            switch(options[CIV_VIEW])
+            {
+                case CURRENT:
+                    dest.setCivView(x, y, Civ2Map::ALL,
+                                   dest.getImprovements(x, y));
+                    break;
+
+                case COPY:
+                    dest.setCivView(x, y, Civ2Map::WHITE,
+                                   source.getCivView(x, y, Civ2Map::WHITE));
+                    dest.setCivView(x, y, Civ2Map::GREEN,
+                                   source.getCivView(x, y, Civ2Map::GREEN));
+                    dest.setCivView(x, y, Civ2Map::BLUE,
+                                   source.getCivView(x, y, Civ2Map::BLUE));
+                    dest.setCivView(x, y, Civ2Map::YELLOW,
+                                   source.getCivView(x, y, Civ2Map::YELLOW));
+                    dest.setCivView(x, y, Civ2Map::CYAN,
+                                   source.getCivView(x, y, Civ2Map::CYAN));
+                    dest.setCivView(x, y, Civ2Map::ORANGE,
+                                   source.getCivView(x, y, Civ2Map::ORANGE));
+                    dest.setCivView(x, y, Civ2Map::PURPLE,
+                                   source.getCivView(x, y, Civ2Map::PURPLE));
+                    break;
+
+                default: // Assume off
+                    break;
+            } // end switch on civ view
+
+            // The resource supression flag allows a resource
+            // that would be there based on the resource seed to be removed
+            // Command line arguments allow it to be copied, cleared (making
+            // all resources visible), or set (making all resources disappear)
+            switch (options[RESOURCE_SUP])
+            {
+                case COPY:
+                    dest.setResourceHidden(x, y, source.isResourceHidden(x, y));
+                    break;
+                case CLEAR:
+                    dest.setResourceHidden(x, y, false);
+                    break;
+                case SET:
+                    dest.setResourceHidden(x, y, true);
+                    break;
+                default: // assume off
+                    break;
+            } // end switch on resource supression
+        } // end inner for
+    } // end outer for
+}
+// end doMapCopy
+
 // Parse the command line arguments, and verify them.
 void parseCommandLine(int argc, char *argv[])
 {
@@ -332,7 +484,7 @@ void parseCommandLine(int argc, char *argv[])
 
 
 
-// Parses the first two command line arguments, the sourcd and
+// Parses the first two command line arguments, the source and
 // destination file names. The return value is the index of the next
 // unparsed parameter.  (2 or 3, depending on whether there are one
 // or two file names)
@@ -396,6 +548,26 @@ void setDefaults()
     }
 }
 
+// Set default values for sourceMap (+sm) and destMap (+dm) based on whether
+// the source and destination accept multiple maps
+void setMapDefaults(bool oneSupportsMultiMaps, bool twoSupportsMultiMaps)
+{
+    // An ALL to ALL copy is default if both maps support multiple maps,
+    // and the source and destination have not been set to a specific map
+    if (oneSupportsMultiMaps && twoSupportsMultiMaps)
+    {
+        if ( (sourceMap == -1 || sourceMap == 0) &&
+             (destMap == -1 || destMap == 0) )
+        {
+            sourceMap = 0;
+            destMap = 0;
+            return;
+        }
+    }
+    // In all other cases, these values default to 1
+    if (sourceMap == -1) sourceMap = 1;
+    if (destMap == -1) destMap = 1;
+}
 
 // Parse the command line options, starting from index
 void parseOptions(int index, int argc, char *argv[]) 
@@ -491,6 +663,39 @@ void parseOptions(int index, int argc, char *argv[])
                 throw runtime_error("Unknown Option: " + o);
             }
         }
+        else if ( o == "rs")
+        {
+            options[RESOURCE_SUP] = value;
+        }
+        else if ( o == "rs:set" )
+        {
+            options[RESOURCE_SUP] = SET;
+        }
+        else if ( o == "rs:clear" )
+        {
+            options[RESOURCE_SUP] = CLEAR;
+        }
+        else if (o.compare(0, 3, "sm:") == 0 || 
+                 o.compare(0, 3, "dm:") == 0 )
+        {
+            int map_num = 0; // 0 is used for "all"
+            if (o.compare(2, string::npos, ":all") != 0)
+            {
+                // The value is not "all", convert to integer
+                if (o.size() <4)
+                {
+                    throw runtime_error("Missing map # for option " + o);
+                }
+                map_num = atoi(o.substr(3, string::npos).c_str());
+
+                if (map_num <1 || map_num > 4) 
+                {
+                    throw runtime_error("Invalid map # for option " + o);
+                }
+            }
+            if (o.compare(0, 3, "sm:") == 0) sourceMap = map_num;
+            else destMap = map_num;        
+        }
         else
         {
             throw runtime_error("Unknown Option: " +  o);
@@ -513,6 +718,27 @@ void checkArgumentValidity()
     {
         throw int(0);
     }
+
+    // Validate multimap copies
+    if (sourceMap > 1) 
+    {
+        if (copy_type == MP || copy_type == MP2MP || copy_type == MP2SAV)
+        {
+            throw runtime_error("Invalid source map option: MP files only have one map.");
+        }
+    }
+    if (destMap != 1 && destMap != -1)
+    {
+        if (copy_type == MP || copy_type == MP2MP || copy_type == SAV2MP)
+        {
+            throw runtime_error("Invalid dest map option: MP files only have one map.");
+        }
+    }
+    if (sourceMap == 0 && destMap != 0 && destMap != -1)
+    {
+        throw runtime_error("Invalid source map option: Cannot copy 'ALL' maps to a single map.");
+    }
+     
 
     // Copying start positions is only valid for MP2MP copies
     if (options[CIV_START] != OFF && copy_type != MP2MP)
@@ -537,20 +763,11 @@ void checkArgumentValidity()
 
     if (copy_type == MP || copy_type == SAV)
     {
-        bool error = false;
-        if (options[SEED] == COPY) error = true;
-        if (options[TERRAIN] == COPY) error = true;
-        if (options[IMPROVEMENT] == COPY) error = true;
-        if (options[VISIBILITY] == COPY) error = true;
-        if (options[OWNERSHIP] == COPY) error = true;
-        if (options[CIV_START] == COPY) error = true;
-        if (options[BODY_COUNTER] == COPY) error = true;
-        if (options[CITY_RADIUS] == COPY) error = true;
-        if (options[FERTILITY] == COPY) error = true;
-        if (options[FERTILITY] == ADJUST) error = true;
-        if (options[CIV_VIEW] == COPY) error = true;
-        
-        if (error) throw runtime_error("Cannot copy information when only one file name is given!");
+        // Make sure destination file exists
+        if (!DustyUtil::fileExists(destFile))
+        {
+            throw runtime_error(string("File ") + destFile + " must exist for in place modification.");
+        }
     }
 }
 
@@ -580,7 +797,7 @@ void printErrorMessage(string message)
 void backupFile(string file) throw (runtime_error)
 {
     ifstream theFile;
-    theFile.open(file.c_str(), ios::binary | ios::nocreate);
+    theFile.open(file.c_str(), ios::binary | ios::in);
 
     if (!theFile)
     {
@@ -588,12 +805,9 @@ void backupFile(string file) throw (runtime_error)
         return;
     }
 
-    if (options[VERBOSE] == ON)
-    {
-        cout << "Backing up." << endl;
-    }
+    LogOutput::log() << "Backing up." << endl;
 
-    unsigned char *backup_buffer = new unsigned char[BACKUP_BUFFER_SIZE];
+    char *backup_buffer = new char[BACKUP_BUFFER_SIZE];
 
     if (backup_buffer == NULL)
     {
