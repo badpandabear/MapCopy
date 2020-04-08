@@ -35,6 +35,8 @@
 //                  field to avoid using bitfields. Made fstream open
 //                  parameters comply with C++ standard.
 // Feb/20/2005 JDR  1.2Beta1 release of ToT multi-map support
+// Mar/15/2005 JDR  Fix problem adding new maps by creating a temp copy before
+//                  saving.
 
 #ifndef CIV2SAV_H_
 #define CIV2SAV_H_
@@ -220,6 +222,11 @@ class Civ2SavedGame
 
         void destroyMaps();
 
+        int readDataBlock(istream& inputStream, 
+                          SmartPointer<char, true>& memory,
+                          istream::pos_type start, istream::pos_type end);
+
+
         SmartPointer<MapHeader> header;
         SmartPointer<StartPositions> start_positions;
         vector<Civ2Map*> maps;
@@ -236,6 +243,12 @@ class Civ2SavedGame
 		unsigned int map_header_offset;
 		unsigned short secondary_maps;
 
+        // The non-Map related data from Civ 2 .SAV file.
+        SmartPointer<char, true> preMapData;
+        int preMapDataSize;
+
+        SmartPointer<char, true> postMapData;
+        int postMapDataSize;
 };
 
 // Civ2Map

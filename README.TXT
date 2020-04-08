@@ -1,4 +1,4 @@
-README.TXT for MapCopy 1.2beta1  
+README.TXT for MapCopy 1.2beta2
 Copyright (C) 2000,2005, James Dustin Reichwein, All Rights Reserved.
 
 Contents
@@ -23,6 +23,9 @@ What's New
 
   WARNING: The new functionality in this version has had only a minimal amount
   of testing.  Therefore be extra careful to backup your work.
+
+  1.2beta2: Fixed bug where adding a new map to a ToT game would overwrite some 
+            non-map data in the destination saved game.
 
 Introduction
 

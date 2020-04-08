@@ -40,7 +40,7 @@
 
 const char *versionText[] =
 {
-    "MapCopy Version 1.2Beta1",
+    "MapCopy Version 1.2Beta2",
     "Written By James Dustin Reichwein, Copyright (C) 2000,2005. All Rights Reserved.",
     NULL
 };

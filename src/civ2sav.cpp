@@ -39,7 +39,8 @@
 //                  field to avoid using bitfields. Made fstream open
 //                  parameters comply with C++ standard.
 // Feb/20/2005 JDR  1.2Beta1 release of ToT multi-map support
-
+// Mar/15/2005 JDR  Fix problem adding new maps by creating a temp copy before
+//                  saving.
 #include <iostream>
 
 #include "civ2sav.h"
@@ -92,6 +93,8 @@ Civ2SavedGame::Civ2SavedGame()
     version = 0;
     map_header_offset = 0;
     secondary_maps = 0;
+    preMapDataSize = 0;
+    postMapDataSize = 0;
 }
 
 Civ2SavedGame::~Civ2SavedGame()
@@ -119,27 +122,32 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
 
     if (!theFile) throw runtime_error(string("Could not open file: ")
                                       +=filename);
-    // Seek within a saved game file for the map header
-    if (!isMP)
-    {
-		// MERCATOR
-		// Find out offset and seek to it.
-		loadMapHeaderOffset(theFile);
-		theFile.seekg(map_header_offset);
-
-        if (!theFile) throw runtime_error(string("Error accessing file: ")
-                                          +=filename);
-    }
-    else
-    {
-        theFile.seekg(0);
-
-        if (!theFile) throw runtime_error(string("Error accessing file: ")
-                                          +=filename);
-    }
 
     try
     {
+
+        // Seek within a saved game file for the map header
+        if (!isMP)
+        {
+            // MERCATOR
+            // Find out the offset for the map header
+            loadMapHeaderOffset(theFile);
+
+            // Now slurp up all the data prior to that offset
+            preMapDataSize = readDataBlock(theFile, preMapData, 0, map_header_offset);
+
+            if (preMapDataSize == -1 || !theFile)
+            {
+                throw runtime_error("Error reading pre-Map data from file.");
+            }
+        }
+        else
+        {
+            theFile.seekg(0);
+
+            if (!theFile) throw runtime_error("Error accessing file");
+        }
+
         LogOutput::log() << "Loading File: " << filename << endl;
         loadMapHeader(theFile);
         
@@ -177,6 +185,21 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
                 maps[i]->setSeed(header->map_seed);
             }
         } // end loop over all maps
+
+        // Get all the extra data from the saved game file
+        if (!isMP)
+        {
+            // Find the end of the file
+            istream::pos_type start = theFile.tellg();
+            theFile.seekg(0, ios_base::end);
+            istream::pos_type end = theFile.tellg();
+
+            postMapDataSize = readDataBlock(theFile, postMapData, start, end);
+            if (postMapDataSize == -1)
+            {
+                throw runtime_error("Error reading post-Map data from file.");
+            }
+        }        
     }
     catch (runtime_error& e)
     {
@@ -184,22 +207,13 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
     }
 }
 
-// Saves to a Civ2 Saved game file
-//
-// Parameters:
-// filename        The name of the file to save over
+// Saves to a Civ2 Saved game file into the original file that it was loaded
+// from.
 //
 // Exceptions:
 // runtime_error - when the save fails for some reason.  The reason is
 //                 returned in the what() member of the runtime_error.
 //
-// Notes: For .SAV (or .SCN) files, this saves over an existing file, and does
-//        not create a new file. This is because I currently don't know the full
-//        format for a Civ2 Saved game file, and therefore cannot create a
-//        complete file from scratch.
-//        For MP files, it can create the file, but if the file exists, it will
-//        not write over existing civilization start information.
-
 void Civ2SavedGame::save(const string& filename) throw (runtime_error)
 {
     fstream theFile;
@@ -214,59 +228,18 @@ void Civ2SavedGame::save(const string& filename) throw (runtime_error)
         throw runtime_error("Cannot save multiple maps into a non-ToT game");
     }
 
-    // The C and C++ standards don't have a way to open a file if it exists
-    // (without truncating) or to create the file if it doesn't in a single
-    // open call. So I check for its existence first.
-    bool exists = fileExists(filename);
-
-    if (isMP)
-    {
-
-        if (exists)
-        {
-           // Open the file as read/write so it will not be truncated if it 
-           // exists. From my understanding of the C++ standard this is equivalent
-           // to r+b being passed to fopen in C.
-           theFile.open(filename.c_str(), ios_base::in | ios_base::out | ios_base::binary);
-        }
-        else
-        {
-           // Else open the file for writing only. This will force a new file
-           // to be created (same as wb in C)
-           theFile.open(filename.c_str(), ios_base::out | ios_base::binary);
-        }
-    }
-    else
-    {
-        if (!exists)
-        {
-            // Currently creating a SAV file form scratch is not supported
-            throw runtime_error(string("Cannot create SAV/SCN file from scratch: ")
-                                += filename);
-        }
-        else
-        {
-           // Open the file as read/write to prevent truncating it
-           theFile.open(filename.c_str(), ios_base::in | ios_base::out | ios_base::binary);
-        }
-    }
+    // Open the file for writing only. This will force a new file to be created
+    // if one does not exist, and will truncate an existing file. (same as wb in C)
+    theFile.open(filename.c_str(), ios_base::out | ios_base::binary);
 
     if (!theFile) throw runtime_error(string("Could not open file: ")
                                       +=filename);
 
     if (!isMP)
     {
-		loadMapHeaderOffset(theFile);
-        theFile.seekp(map_header_offset);
-
-        if (!theFile) throw runtime_error(string("Error accessing file: ")
-                                          +=filename);
-    }
-    else 
-    {
-        theFile.seekp(0);
-
-        if (!theFile) throw runtime_error(string("Error accessing file: ")
+        // Write out the pre-Map data read in at load time
+        theFile.write(preMapData, preMapDataSize);
+        if (!theFile) throw runtime_error(string("Error writing pre-Map data to: ")
                                           +=filename);
     }
 
@@ -288,6 +261,13 @@ void Civ2SavedGame::save(const string& filename) throw (runtime_error)
             {
                 saveMapSpecificSeed(theFile, maps[i]->getSeed());
             }
+        }
+
+        // Write out post-Map data
+        if (!isMP)
+        {
+            theFile.write(postMapData, postMapDataSize);
+            if (!theFile) throw runtime_error("Failure writing post-Map data.");
         }
     }
     catch (runtime_error& e)
@@ -730,6 +710,33 @@ bool Civ2SavedGame::supportsMultiMaps() const
 {
     return version == TOT10_VERSION || version == TOT11_VERSION;
 }   
+
+// Allocate memory for a block of data in the saved game file, and then
+// read that data into the allocated memory. Note the byte at offset end
+// is not read, but the stream is left with end being its current position.
+int Civ2SavedGame::readDataBlock(istream& inputStream, 
+                                 SmartPointer<char, true>& memory,
+                                 istream::pos_type start, istream::pos_type end)
+{
+    // Figure out how much memory is needed
+    int size = end - start;
+
+    // Allocate the memory
+    memory = new char[ size ];
+
+    if (memory.isNull()) return -1;
+
+    // Seek to the starting position and read the data
+    inputStream.seekg(start);
+    if (!inputStream) return -1;
+
+    inputStream.read(memory, size);
+
+    if (!inputStream || inputStream.gcount() != size) return -1;
+
+    return size;
+}
+    
 
 /////////////////////// Improvements Methods ////////////////////////////////
 Improvements::Improvements()
