@@ -41,6 +41,7 @@
 // Feb/10/2005  JDR   Changes for mingw compiler, removed unncessary array 
 //                    operators.
 // Feb/13/2005  JDR   Added debug output utility class and methods.
+// May/22/2005  JDR   Added support for multiple log levels.
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifndef DUSTYUTIL_H_
@@ -49,6 +50,8 @@
 #include <stddef.h>
 #include <sstream>
 #include <string>
+#include <vector>
+
 using namespace std;
 
 namespace DustyUtil
@@ -190,23 +193,42 @@ namespace DustyUtil
         T *pointer;
     };
 
-    // Utility methods for output that's enabled/disabled by a global verbose
+    // Utility methods for output that's enabled/disabled by global verbose
     // settings.  This has all static members and cannot be instantiated.
     // Future enhancements could be to support multiple output streams
-    // (aka log files and stdout), multiple levels of logging (debug vs error)
-    // perhaps with different levels going to different streams.
+    // (aka log files and stdout). It supports multiple levels of logging
+    // using a numeric level, starting at level 0.
+    // To Use, first call setOutputStream(), then enableLevel one each level
+    // You want activated.  Use levels in a sequential order to save memory.
+    // When logging to a level, use LogOutput::log(level) << "message".
+    // The log() method returns an ostream, so standard stream operators can
+    // be used.  If the level passed has not been enabled (or has been disabled
+    // with disableLevel), then no output is made to the stream set by
+    // setOutputStream.  If it has been enabled, then the output is performed.
     class LogOutput
     {
         public:
+       
         static void setOutputStream(ostream& outputStream)
         { stream = &outputStream; }
 
-        static void setEnabled(bool b)         
-        { enabled = b; }
+        static void setMaxLevel(const int maxLevel)
+        { enabled.resize(maxLevel+1, false); }
+               
+        static void enableLevel(const int level)         
+        { 
+           if (level >= enabled.size()) enabled.resize(level+1);
+           enabled[level] = true; 
+        }
 
-        static ostream& log()
+        static void disableLevel(const int level)         
+        { 
+           if (level < enabled.size()) enabled[level] = false;
+        }
+
+        static ostream& log(const int level)
         {
-            if (enabled) return *stream;
+            if (level < enabled.size() && enabled[level]) return *stream;
             else return nullStream;
         }
 
@@ -214,7 +236,7 @@ namespace DustyUtil
 
         static ostream* stream;
         static ostream nullStream;
-        static bool enabled;
+        static vector<bool> enabled;
     };
 
     // This is a "null" stream buf that reads nothing and writes nothing

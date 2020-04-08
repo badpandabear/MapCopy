@@ -41,6 +41,7 @@
 // Sep/13/2000  JDR  Released under MPL
 // Feb/10/2005  JDR  Removed non-standard open mode from fileExists()
 // Feb/13/2005  JDR  Added LogOutput class
+// May/22/2005  JDR  Added support for multiple log levels.
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <string>
@@ -105,5 +106,5 @@ bool DustyUtil::fileExists(const string filename)
 
 //////////////// Log output //////////////////////////////////////////////
 ostream* DustyUtil::LogOutput::stream = NULL;
-bool DustyUtil::LogOutput::enabled = false;
+vector<bool> DustyUtil::LogOutput::enabled;
 ostream DustyUtil::LogOutput::nullStream(new nullBuf());

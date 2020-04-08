@@ -148,7 +148,6 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
             if (!theFile) throw runtime_error("Error accessing file");
         }
 
-        LogOutput::log() << "Loading File: " << filename << endl;
         loadMapHeader(theFile);
         
         if (isMP)
@@ -169,7 +168,8 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
                                        !isMP, // The map has a civ view map
                                               // if this is not an MP file
                                        i,
-                                       header->flat_earth) );
+                                       header->flat_earth,
+                                       rules) );
             maps[i]->load(theFile);
 
             // Read map specific seed for TOT files
@@ -177,7 +177,7 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
                 version == TOT11_VERSION )
             {
                  maps[i]->setSeed(loadMapSpecificSeed(theFile));
-                 LogOutput::log() << "Map " << i + 1 << " seed is " << maps[i]->getSeed() << endl;
+                 LogOutput::log(DEBUG) << "Map " << i + 1 << " seed is " << maps[i]->getSeed() << endl;
             }
             else
             {
@@ -313,7 +313,8 @@ void Civ2SavedGame::createMP(int width, int height) throw (runtime_error)
                                newHeader->map_area,
                                false, // MPs have no civ view information
                                0, // The first and only map for the .MP file
-                               false) ); 
+                               false,
+                               rules) ); 
 
     // Now set members
     isMP = true;
@@ -434,7 +435,8 @@ void Civ2SavedGame::addMap(int n) throw (runtime_error)
                                           header->map_area,
                                           !isMP, 
                                           n,
-                                          header->flat_earth); 
+                                          header->flat_earth,
+                                          rules); 
     // Insertion at the end is easy for a vector
     if (n == secondary_maps +1)
     {
@@ -513,6 +515,44 @@ Civ2Map& Civ2SavedGame::getMap(int n) throw (runtime_error)
     } 
 
     return *(maps[n]);
+}
+
+// Return pretty version string
+const char * Civ2SavedGame::getVersionString() const
+{
+    switch(version)
+    {
+        case CIC_VERSION:
+            return "CIC";
+            break;
+        case FW_VERSION:
+            return "FW";
+            break;
+        case MGE13_VERSION:
+            return "MGE";
+            break;
+        case TOT10_VERSION:
+            return "ToT 1.0";
+            break;
+        case TOT11_VERSION:
+            return "ToT 1.1";
+            break;
+        default:
+            return "Unknown Version";
+            break;
+    }
+}
+
+// Return whether the saved game is on a flat earth
+bool Civ2SavedGame::isFlatEarth() const
+{
+    return (header->flat_earth == 1);
+}
+
+// Return this is a MP file
+bool Civ2SavedGame::isMapOnly() const
+{
+    return isMP;
 }
 
 ////////////////////////// Private Helper Functions ///////////////////////////
@@ -597,18 +637,18 @@ void Civ2SavedGame::loadMapHeader(istream& is) throw(runtime_error)
         throw runtime_error("Read error.");
 	}
 
-    LogOutput::log() << "X Dimension is: " << header->x_dimension << endl;
-    LogOutput::log() << "Y Dimension is: " << header->y_dimension << endl;
-    LogOutput::log() << "Map Area is: " << header->map_area << endl;
-    LogOutput::log() << "Flat Earth is: " << header->flat_earth << endl;
-    LogOutput::log() << "Map Seed is: " << header->map_seed << endl;
-    LogOutput::log() << "locator x dim is: " << header->locator_x_dimension << endl;
-    LogOutput::log() << "locator y dim is: " << header->locator_y_dimension << endl;
+    LogOutput::log(DEBUG) << "X Dimension is: " << header->x_dimension << endl;
+    LogOutput::log(DEBUG) << "Y Dimension is: " << header->y_dimension << endl;
+    LogOutput::log(DEBUG) << "Map Area is: " << header->map_area << endl;
+    LogOutput::log(DEBUG) << "Flat Earth is: " << header->flat_earth << endl;
+    LogOutput::log(DEBUG) << "Map Seed is: " << header->map_seed << endl;
+    LogOutput::log(DEBUG) << "locator x dim is: " << header->locator_x_dimension << endl;
+    LogOutput::log(DEBUG) << "locator y dim is: " << header->locator_y_dimension << endl;
 
     // MERCATOR
     // Also write 8th header value for ToT files.
     if (version == TOT10_VERSION || version == TOT11_VERSION)
-        LogOutput::log() << "Secondary Maps: " << secondary_maps << endl;
+        LogOutput::log(DEBUG) << "Secondary Maps: " << secondary_maps << endl;
 
 }
 
@@ -634,7 +674,7 @@ void Civ2SavedGame::saveMapHeader(ostream& os) const throw(runtime_error)
 	}
 
 
-    LogOutput::log() << "Wrote header." << endl;
+    LogOutput::log(DEBUG) << "Wrote header." << endl;
 
 }
 
@@ -655,7 +695,7 @@ void Civ2SavedGame::loadStartPositions(istream& is)
         throw runtime_error("Read error.");
 
     start_positions = p.releaseControl();
-    LogOutput::log() << "Loaded start positions." << endl;
+    LogOutput::log(DEBUG) << "Loaded start positions." << endl;
 }
 
 // Loads and returns the map specific seed from an input stream
@@ -692,7 +732,7 @@ void Civ2SavedGame::saveStartPositions(ostream& os) const throw (runtime_error)
     if (!os)
         throw runtime_error("Write Error.");
 
-    LogOutput::log() << "Wrote starting positions." << endl;
+    LogOutput::log(DEBUG) << "Wrote starting positions." << endl;
 }
 
 // Destroy all memory associated with the maps vector

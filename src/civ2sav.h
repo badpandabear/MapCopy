@@ -50,6 +50,10 @@
 using namespace std;
 using namespace DustyUtil;
 
+// Debug and verbose levels used for logging output
+static const int NORMAL = 0;
+static const int DEBUG = 1;
+
 // Improvements
 // This class is encapsulates the Improvements byte field in Civ 2 saved games.
 // Its intent is to hide the detail of the byte field's format from clients,
@@ -149,6 +153,68 @@ class WhichCivs
     static const unsigned char PURPLE_MASK;
 };
 
+// Numeric values for default CIV2 terrain types
+enum Civ2TerrainType { DESSERT=0, PLAINS, GRASSLAND, FOREST, HILLS, MOUNTAINS, TUNDRA,
+                       GLACIER, SWAMP,  JUNGLE, OCEAN, NUM_TERRAIN_TYPES };
+
+// Civ2TerrainRules
+// This class encapsulates rules.txt data about terrains.
+
+class Civ2TerrainRules
+{
+    public:
+
+        // Construct a terrain type with the default rules
+        Civ2TerrainRules();
+
+        // Don't need these yet: 
+        // int getMoveCost(const Type& t) const; 
+        // int getDefense(const Type& t) const;
+        int getFood(const Civ2TerrainType& t) const;
+        int getShields(const Civ2TerrainType& t) const;
+        int getTrade(const Civ2TerrainType& t) const;
+        bool canBeIrrigated(const Civ2TerrainType& t) const;
+        bool canBeMined(const Civ2TerrainType& t) const;
+
+        // Additional information from rules.txt could be added but is not 
+        // needed yet.
+
+    private:
+
+        friend class Civ2Rules;
+
+        // Construct with an input stream pointing at a rules.txt file         
+        // Civ2TerrainRules(istream& is);
+
+        struct TerrainInfo
+        {
+            int food;
+            int shields;
+            int trade;
+            bool canBeIrrigated;
+            bool canBeMined;
+        };
+
+        TerrainInfo terrain_rules[NUM_TERRAIN_TYPES];
+        static const TerrainInfo default_rules[NUM_TERRAIN_TYPES];
+};
+
+// Class to encapsulate the data in a Civ2 Rules.txt file
+class Civ2Rules
+{
+    public:
+        // Create with default rules
+        Civ2Rules();
+
+        // Return terrain rules for a given map.
+        Civ2TerrainRules& getTerrainRules(int mapNum) throw (runtime_error);
+
+    private:
+
+        vector<Civ2TerrainRules> map_terrain_rules;
+};
+        
+
 // Civ2SavedGame
 // This class is responsible for reading a Civ 2 saved game into memory,
 // allowing the game to be modified, and writing it to back to a file.
@@ -188,10 +254,12 @@ class Civ2SavedGame
         void setCivStart(const StartPositions& sp) throw (runtime_error);
 
         static bool isMPFile(string filename);
-
+        bool isMapOnly() const;
         bool supportsMultiMaps() const;
 
-
+        const char * getVersionString() const;
+        bool isFlatEarth() const;
+        
     private:
         struct MapHeader
         {
@@ -249,6 +317,8 @@ class Civ2SavedGame
 
         SmartPointer<char, true> postMapData;
         int postMapDataSize;
+
+        Civ2Rules rules;
 };
 
 // Civ2Map
@@ -260,9 +330,6 @@ class Civ2Map
 {
     public:
 
-        // Numeric values for default CIV2 terrain types
-        enum { DESSERT=0, PLAINS, GRASSLAND, FOREST, HILLS, MOUNTAINS, TUNDRA,
-               GLACIER, SWAMP,  JUNGLE, OCEAN };
 
         enum Civilization { RED=0, WHITE, GREEN, BLUE, YELLOW, CYAN, ORANGE, PURPLE,
                             ALL };
@@ -291,8 +358,8 @@ class Civ2Map
         Improvements getCivView(int x, int y, Civilization c) const throw (runtime_error);
         void setCivView(int x, int y, Civilization c, Improvements i) throw (runtime_error);
 
-        int getTypeIndex(int x, int y) const throw(runtime_error);
-        void setTypeIndex(int x, int y, int i) throw(runtime_error);
+        Civ2TerrainType getTerrainType(int x, int y) const throw(runtime_error);
+        void setTerrainType(int x, int y, Civ2TerrainType t) throw(runtime_error);
 
         bool isRiver(int x, int y) const throw (runtime_error);
         void setRiver(int x, int y, bool river) throw(runtime_error);
@@ -307,6 +374,56 @@ class Civ2Map
 
         Civilization getOwnership(int x, int y) const throw (runtime_error);
         void setOwnership(int x, int y, Civilization civ) throw (runtime_error);
+
+        bool hasGrasslandShield(int x, int y) throw (runtime_error);
+
+        Civ2TerrainRules& getTerrainRules();
+
+        bool isFlat() throw (runtime_error);
+
+        // Class to iterate through squares in a ring pattern
+        // around a center point, like in the city radius/adjust radius
+        class RingIterator
+        {
+            public:
+                
+                int getX();
+                int getY();
+                int getDistance();
+                void reset();
+
+                RingIterator& operator++() throw (runtime_error) // Prefix operator
+                {
+                    moveToNextPoint();
+                    return *this;
+                }
+
+                RingIterator operator++(int d) throw (runtime_error) // Postfix operator
+                {
+                    RingIterator tmp = *this;
+                    moveToNextPoint();
+                    return tmp;
+                }
+
+                // Copy constructor
+                RingIterator(const RingIterator& ri);
+
+                RingIterator(int x, int y, Civ2Map& map);
+            private:
+               
+                int centerX;
+                int centerY;
+                int distance;
+                int direction;
+                int endRingX;
+                int endRingY;
+                int curX;
+                int curY;
+                Civ2Map& map;
+                bool atCorner;
+                void moveToNextPoint() throw (runtime_error);
+                bool movePoint(int &x, int&y, const int& direction, const int &distance);
+        };
 
     private:
         struct TerrainCell
@@ -331,19 +448,11 @@ class Civ2Map
                         
 
         };
-        struct Tuple
-        {
-            int x;
-            int y;
-            Tuple(int a, int b) { x=a; y=b; }
-            Tuple() {x=0; y=0;}
-        };
-
         friend class Civ2SavedGame;    // Civ2Saved game is responsible for creating/
-                                 // destroying Civ2Maps.
+                                       // destroying Civ2Maps.
 
         Civ2Map(int x_dim, int y_dim, int area, bool has_civ_view_map,
-                int mapPos, bool flat_earth) throw (runtime_error); 
+                int mapPos, bool flat_earth, Civ2Rules& rules) throw (runtime_error); 
 
         void loadCivViewMap(istream& is) throw (runtime_error);
         void saveCivViewMap(ostream& os) const throw (runtime_error);
@@ -355,10 +464,14 @@ class Civ2Map
 
         int XYtoCivViewOffset(int x, int y, Civilization c) const throw (runtime_error);
 
-        void getCityRadius(int x, int y, vector<Tuple>& out) const throw (runtime_error);
+        void initResourceMap() throw (runtime_error);
 
         SmartPointer<TerrainCell,true> terrain_map;
         SmartPointer<unsigned char,true> civ_view_map;
+        SmartPointer<unsigned char, true> resource_map;
+
+        // Bit fields in resource_map;
+        static const unsigned char GRASS_SHIELD_FLAG = 0x01;
 
         // Fields from map header used by Civ2Map
         int x_dimension;
@@ -374,6 +487,9 @@ class Civ2Map
 
         // What position the map is within its saved game file
         unsigned char map_position;
+
+        // Terrain rules specific to this map
+        Civ2Rules& rules;
 };
 #endif
 

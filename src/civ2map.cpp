@@ -42,7 +42,7 @@
 // Feb/20/2005 JDR  1.2Beta1 release of ToT multi-map support
 
 #include <iostream>
-
+#include <iomanip>
 #include "civ2sav.h"
 
 /////////////////////// Civ2Map Constants ///////////////////////////////
@@ -52,19 +52,13 @@ const unsigned char RIVER_FLAG = 0x80;
 const unsigned char NO_RESOURCE_FLAG = 0x40;
 const unsigned char TERRAIN_TYPE_MASK = 0x3F;
 
-// These are the weights we use when calculating fertility values
-// These are based on my observations of how the AI does things,
-// in an attempt to calculate fertility in as close a manner to the AI's
-// algorithm as possible.
-const int FOOD_WEIGHT = 3;
-const int TRADE_WEIGHT = 2;
-const int SHIELD_WEIGHT = 1;
 
 /////////////////////// Civ2Map Constructor ////////////////////////////////
 
 // Private constructor called only by Civ2SavedGame
 Civ2Map::Civ2Map(int x_dim, int y_dim, int area, bool has_civ_view_map,
-                 int ma_pos, bool fe) throw (runtime_error)
+                 int ma_pos, bool fe, Civ2Rules& in_rules) throw (runtime_error)
+: rules(in_rules)
 {
     x_dimension = x_dim;
     y_dimension = y_dim;
@@ -93,6 +87,10 @@ Civ2Map::Civ2Map(int x_dim, int y_dim, int area, bool has_civ_view_map,
             civ_view_map[i] = 0;
         }
     }
+
+    // Setup resource map. This is generated based on grassland/resource patterns
+    // and is not directly contained in a saved game or map file
+    initResourceMap();
 }
 
 /////////////////////// Civ2Map Public methods ////////////////////////////////
@@ -216,7 +214,7 @@ void Civ2Map::setResourceHidden(int x, int y, bool hidden) throw (runtime_error)
 // square. It does not contain information about rivers or resources or
 // improvements
 
-int Civ2Map::getTypeIndex(int x, int y) const throw (runtime_error)
+Civ2TerrainType Civ2Map::getTerrainType(int x, int y) const throw (runtime_error)
 {
     if (terrain_map.isNull())
     {
@@ -227,12 +225,12 @@ int Civ2Map::getTypeIndex(int x, int y) const throw (runtime_error)
 
     const TerrainCell& c = terrain_map[offset];
 
-    return (int)(c.terrainType & TERRAIN_TYPE_MASK);
+    return (Civ2TerrainType)(c.terrainType & TERRAIN_TYPE_MASK);
 }
 
 // Sets the terrain type (e.g. mountain, ocean, etc) index for a given map
 // square.
-void Civ2Map::setTypeIndex(int x, int y, int i) throw (runtime_error)
+void Civ2Map::setTerrainType(int x, int y, Civ2TerrainType t) throw (runtime_error)
 {
     if (terrain_map.isNull())
     {
@@ -243,7 +241,7 @@ void Civ2Map::setTypeIndex(int x, int y, int i) throw (runtime_error)
 
     TerrainCell& c = terrain_map[offset];
 
-    unsigned char index = (unsigned char)i;
+    unsigned char index = (unsigned char)t;
 
     c.terrainType = (c.terrainType & (~TERRAIN_TYPE_MASK))
                     | (index & TERRAIN_TYPE_MASK);
@@ -341,114 +339,215 @@ void Civ2Map::setFertility(int x, int y, unsigned char f) throw (runtime_error)
 }
 
 // Calculates the fertility of a given square based on the surrounding
-// terrain
+// terrain. Note this does not include the reduction due to a city being
+// present nearby, which can be performed by the adjustFertility() method
 void Civ2Map::calcFertility(int x, int y) throw (runtime_error)
 {
     if (terrain_map.isNull()) throw runtime_error("No map loaded.");
 
     int offset = XYtoOffset(x, y);
 
-    // First find the total max food production of each
-    // square in the city radius. This does not consider special resources,
-    // but does consider all possible terrain improvements
-    // First find this sum, and also find if this square is within a city's
-    // radius.
-    int resourceSum = 0;
-    bool inCityRadius = false;
-    vector<Tuple> citySquares;
-    getCityRadius(x, y, citySquares);
+    // Find the sum of the food, shields and trade in the square itself,
+    // the inner ring of the city radius around the square, and the outer ring
+    // of the city radius around the square
+    float selfFood = 0.0;
+    float selfShields = 0.0;
+    float selfTrade = 0.0;
 
-    int terrainResources[OCEAN+1][3] =
+    float innerFood = 0.0;
+    float innerShields = 0.0;
+    float innerTrade = 0.0;
+
+    float outerFood = 0.0;
+    float outerShields = 0.0;
+    float outerTrade = 0.0;
+
+    float food = 0;
+    float shields = 0;
+    float trade = 0;
+
+    // Amount mining/irrigation adds to the food/shields. These were
+    // empircally derived from observing how Civ2 calculates fertility
+    // Note these still apply if food/shields is 0
+    static const float IRRIGATION_BONUS = (2.0 / 3.0);
+    static const float MINING_BONUS = (0.5);
+
+    Civ2TerrainRules& terrain_rules = rules.getTerrainRules(map_position);
+    RingIterator i(x, y, *this);
+
+    Civ2TerrainType terrain_type;
+
+    // Loop while in city radius
+    while (i.getDistance() < 3)
     {
-        //              Food Shields Trade
-        /* Dessert */   { 2,   1,      1 },
-        /* Plains  */   { 3,   1,      1 },
-        /* Grassland */ { 4,   0,      1 },
-        /* Forest */    { 1,   3,      0 },
-        /* Hills   */   { 2,   4,      1 },
-        /* Mountains */ { 0,   3,      0 },
-        /* Tundra    */ { 1,   0,      0 },
-        /* Glacier */   { 0,   1,      0 },
-        /* Swamp   */   { 1,   0,      0 },
-        /* Jungle  */   { 1,   0,      0 },
-        /* Ocean */     { 1,   0,      2 }
-    };
-    for (unsigned int i = 0; i < citySquares.size(); i++)
-    {
-        int x = citySquares[i].x;
-        int y = citySquares[i].y;
-        int type = getTypeIndex(x, y);
-        // calculate weighted sum
-        resourceSum    += FOOD_WEIGHT * terrainResources[type][0];
-        resourceSum    += SHIELD_WEIGHT * terrainResources[type][1];
-        resourceSum    += TRADE_WEIGHT * terrainResources[type][2];
-        // Rivers add 1 trade
-        if (isRiver(x, y))
+        // Get the food, shields, and trade for this terrain type
+        terrain_type = getTerrainType(i.getX(), i.getY());
+        food = terrain_rules.getFood(terrain_type);
+        trade = terrain_rules.getTrade(terrain_type);
+
+        // Shields is always 1 if a grassland square has a shield, otherwise
+        // it is always 0 (at least as far as the Civ2 fertility calculation
+        // seems to care)
+        if (terrain_type == GRASSLAND)
         {
-            resourceSum += TRADE_WEIGHT * 1;
+           if (hasGrasslandShield(i.getX(), i.getY()))
+           {
+              shields = 1;
+           }
+           else
+           { 
+              shields = 0;
+           }
         }
-        if (getImprovements(x, y).hasCity()) inCityRadius = true;
+        else
+        {
+           shields=terrain_rules.getShields(terrain_type);
+        }
+
+
+        // Add irrigation/mining bonus
+        // Note both can't apply at once, and mining takes priority
+        if (terrain_rules.canBeMined(terrain_type))
+        {
+            shields += MINING_BONUS;
+        }
+        else if (terrain_rules.canBeIrrigated(terrain_type))
+        {
+            food += IRRIGATION_BONUS;
+        }
+    
+    
+        // Add the squares contributions to the appropriate totals
+        switch (i.getDistance())
+        {
+            case 0:
+            {
+                selfFood += food;
+                selfShields += shields;
+                selfTrade += trade;
+                break;
+            }
+            case 1:
+            {
+                innerFood += food;
+                innerShields += shields;
+                innerTrade += trade;
+                break;
+            }
+            case 2:
+            {
+                outerFood += food;
+                outerShields += shields;
+                outerTrade += trade;
+                break;
+            }
+            default:
+            {
+                throw runtime_error("Unknown distance in calcFertility! This should never happen...");
+                break;
+            }
+        }
+        // Move to the next square
+        ++i;
     }
 
-    // The fertility is calculated as a value between 0 and 15 (0x0F).
-    // This is calculated a normalized value from 0 to 1 times 15.
-    // The normalized value is calculated by dividing by 
-    // (42 * FOOD_WEIGHT + 42 * SHIELD_WEIGHT + 42 * TRADE_WEIGHT)
-    // 42 was chosen as it represents a production of two per square in the city
-    // radius.  Therefore, a square that produces 2 food per square, 2 shields
-    // per square, and 2 trade per square gets a full score. (Other combinations
-    // of food/trade/shields can also produce a full score).
-    double fertility = resourceSum;
-    fertility *= 15;
-    fertility /= 252;
+    // Now combine food based on weights of various distances from the center
+    // square. These weights were also found empirically
+    static const float SELF_WEIGHT = 4.0;
+    static const float INNER_WEIGHT = 2.0;
+    static const float OUTER_WEIGHT = 1.0;
 
-    // This result may be > than 15, so force it to be 15 and convert to an
-    // integer
-    if (fertility > 15) fertility = 15;
-    unsigned short int f = static_cast<unsigned short int>(fertility);
+    float combinedFood = (selfFood * SELF_WEIGHT) + 
+                         (innerFood * INNER_WEIGHT) + 
+                         (outerFood * OUTER_WEIGHT);
 
-    int type = getTypeIndex(x, y);
+    float combinedShields = (selfShields * SELF_WEIGHT) + 
+                            (innerShields * INNER_WEIGHT) + 
+                            (outerShields * OUTER_WEIGHT);
 
-    // If we are within a city radius 7 should be the maximum.
-    if (inCityRadius) f &= 0x07;
+    float combinedTrade = (selfTrade * SELF_WEIGHT) + 
+                          (innerTrade * INNER_WEIGHT) + 
+                          (outerTrade * OUTER_WEIGHT);
 
-    // Otherwise make sure that a grassland square outside of a city has at least 
-    // an 8 fertility. This is to maintain at least some consitency with how
-    // Civ 2 calculates fertility
-    else if (type == GRASSLAND || type == PLAINS)
+    // Combine these into a floating point fertility value
+    static const float FOOD_WEIGHT = 3.0;
+    static const float SHIELDS_WEIGHT = 2.0;
+    static const float TRADE_WEIGHT = 1.0;
+    static const float DIVISOR = 16.0;
+
+
+    float float_fertility = (FOOD_WEIGHT * combinedFood) +
+                            (SHIELDS_WEIGHT * combinedShields) + 
+                            (TRADE_WEIGHT * combinedTrade);
+
+    float_fertility /= DIVISOR;
+
+    // Now round off to an integer fertility
+    unsigned char int_fertility = (unsigned char) round(float_fertility);
+/* Yey! Commented out debug code!
+    if (x == 7 && y == 45)
     {
-        if (f < 8) f = 8;
+        cout << "self food: " << selfFood << endl;
+        cout << "self shields: " << selfShields << endl;
+        cout << "self trade: " << selfTrade << endl;
+
+        cout << "inner food: " << innerFood << endl;
+        cout << "inner shields: " << innerShields << endl;
+        cout << "inner trade: " << innerTrade << endl;
+
+        cout << "outer food: " << outerFood << endl;
+        cout << "outer shields: " << outerShields << endl;
+        cout << "outer trade: " << outerTrade << endl;
+
+        cout << "combined food: " << combinedFood << endl;
+        cout << "combined shields: " << combinedShields << endl;
+        cout << "combined trade: " << combinedTrade << endl;
+
+        cout << "float/int fertility: " << setprecision(4) << float_fertility << "/" << (int)int_fertility << endl;
     }
-    else f &= 0x0F;
+*/
+    // Another special feature of grassland squares. If they don't have 
+    // a shield, their fertility is decremented by 1
+    if (getTerrainType(x,y) == GRASSLAND && !hasGrasslandShield(x,y)) int_fertility --;
+
+    // Fertility is not allowed to be less than 8 or more than 15
+    // Note that effects of being in a city radius are handled by adjustFertility
+    if (int_fertility <8) int_fertility = 8;
+    else if (int_fertility > 15) int_fertility = 15;
 
     terrain_map[offset].fert_ownership = 
-        (terrain_map[offset].fert_ownership & 0xF0) | f;
+        (terrain_map[offset].fert_ownership & 0xF0) | int_fertility;
 }
 
 // Adjusts the fertility of a given square so that it is in the range
-// of 0-7 if it is near a city.
+// of 0-7 if it is near a city.  Note that "near" a city does not mean 
+// the city radius, rather a ring of radius 3 (with 5 squares at an edge
+// rather than 3).
 void Civ2Map::adjustFertility(int x, int y) throw (runtime_error)
 {
     if (terrain_map.isNull()) throw runtime_error("No map loaded.");
 
     int offset = XYtoOffset(x, y);
 
-    vector<Tuple> citySquares;
-    getCityRadius(x, y, citySquares);
-
+    // It appears that this adjust ment is not the city radius, but one more ring
+    // outside of that
+    static const int MAX_ADJUST_RADIUS = 3;
     bool inCityRadius = false;
 
-    for (unsigned int i = 0; i < citySquares.size(); i++)
+    for (RingIterator i(x, y, *this);
+         i.getDistance() <= MAX_ADJUST_RADIUS; ++i)
     {
-        int x = citySquares[i].x;
-        int y = citySquares[i].y;
-        if (getImprovements(x, y).hasCity()) inCityRadius = true;
+        if (getImprovements(i.getX(), i.getY()).hasCity()) inCityRadius = true;
     }
-    unsigned int f = terrain_map[offset].fert_ownership & 0x0F;
+    unsigned char f = terrain_map[offset].fert_ownership & 0x0F;
 
-    if (inCityRadius) f &= 0x07;
-    else f &= 0x0F;
-
+    if (inCityRadius) 
+    {
+        // If another city has decremented fertility to below 8, then donot
+        // decrement it again.
+        if (f > 7) f-=8;
+    }
+ 
     terrain_map[offset].fert_ownership = 
         (terrain_map[offset].fert_ownership & 0xF0) | f;
 }
@@ -576,6 +675,25 @@ void Civ2Map::setCivView(int x, int y, Civilization c, Improvements i) throw (ru
     }
 }
 
+// Returns whether a given map square has a grassland shield.
+// This always returns false if the square is not a grassland square
+bool Civ2Map::hasGrasslandShield(int x, int y) throw (runtime_error)
+{
+    if (getTerrainType(x, y) != GRASSLAND) return false;
+
+    // It is a grassland, check the resource map
+    int offset = XYtoOffset(x, y);
+
+    if (resource_map[offset] & GRASS_SHIELD_FLAG) return true;
+    else return false;
+}
+
+// Return whether the map is flat
+bool Civ2Map::isFlat() throw (runtime_error)
+{
+    return flat_earth;
+}
+
 ////////////////////////// Private Methods ///////////////////////////
 
 // This loads the terrain map from the given input stream. It assumes that the
@@ -596,7 +714,7 @@ void Civ2Map::loadTerrainMap(istream& is) throw (runtime_error)
     if (is.gcount() != map_area * sizeof(TerrainCell))
         throw runtime_error("Read Error.");
 
-    LogOutput::log() << "Read terrain map" << endl;
+    LogOutput::log(DEBUG) << "Read terrain map" << endl;
 }
 
 // Saves a terrain map to an ostream
@@ -613,7 +731,7 @@ void Civ2Map::saveTerrainMap(ostream& os) const throw(runtime_error)
     if (!os)
         throw runtime_error("Write Error.");
 
-    LogOutput::log() << "Wrote terrain map." << endl;
+    LogOutput::log(DEBUG) << "Wrote terrain map." << endl;
 }
 
 // Loads the Civ View map from a .SAV file. Assumes is is already at the correct
@@ -633,7 +751,7 @@ void Civ2Map::loadCivViewMap(istream& is)
     if (is.gcount() != map_area * sizeof(unsigned char) * 7)
         throw runtime_error("Read Error.");
 
-    LogOutput::log() << "Read civ view map." << endl; 
+    LogOutput::log(DEBUG) << "Read civ view map." << endl; 
 }
 
 // Saves the CivView to a .SAV file. Assumes os is already at the correct offset.
@@ -655,7 +773,7 @@ void Civ2Map::saveCivViewMap(ostream& os) const
     if (!os)
         throw runtime_error("Write Error.");
 
-    LogOutput::log() << "Wrote civ_view_map " << endl;
+    LogOutput::log(DEBUG) << "Wrote civ_view_map " << endl;
     
 }
 
@@ -708,48 +826,255 @@ int Civ2Map::XYtoCivViewOffset(int x, int y, Civilization c) const
     return offset;
 }
 
-// Adds Tuples to vector "out" for each square in the city radius around x, y
-void Civ2Map::getCityRadius(int x, int y, vector<Tuple>& out) const
-                                  throw (runtime_error)
+// Initializes the resource map, which is an internal structure that
+// maintains whether or not a square has a resource or grassland shield.
+// Note this structures ignores whether the square is a grassland, or whether
+// the resource has been supressed; it is used only to hold the patterns that
+// Civ2 uses to determine these things.
+// Currently only does the grassland shield pattern.
+void Civ2Map::initResourceMap() throw (runtime_error)
 {
-    // Offsets for calculating the 21 squares in a city radius.
-    Tuple offsets[21] = { Tuple(-3, -1), Tuple(-2, -2), Tuple(-1, -3),
-                          Tuple(-3,  1), Tuple(-2,  0), Tuple(-1, -1),
-                          Tuple( 0, -2), Tuple( 1, -3), Tuple(-2,  2),
-                          Tuple(-1, -1), Tuple( 0,  0), Tuple( 1, -1),
-                          Tuple( 2, -2), Tuple(-1,  3), Tuple( 0,  2),
-                          Tuple( 1,  1), Tuple( 2,  0), Tuple( 3, -1),
-                          Tuple( 1,  3), Tuple( 2,  2), Tuple( 3,  1) };
+    int horizontalSeed = 0;
+    int evenVerticalSeed = 0;
+    int oddVerticalSeed = 2;
 
-    // Iterate through each square in the city radius
-    for (int i = 0; i < 21; i++)
+    resource_map = new unsigned char[x_dimension * y_dimension];
+    if (resource_map.isNull()) 
+        throw new runtime_error ("Could not allocate enough memory for resource_map.");
+
+    for (int y = 0; y < getHeight(); y++)
     {
-        // Add the offsets to find the x,y coordinates of the square
-        Tuple temp(x + offsets[i].x, y + offsets[i].y);
-
-        // Check for out of bounds
-        if (temp.y < 0 || temp.y >= y_dimension) continue;
-
-        // When checking for x being out of bounds, do wrapping if the world
-        // is round
-        if (temp.x < 0)
+        if (y % 2 == 0) // Even row
         {
-            if (!flat_earth)
-            {
-                temp.x = x_dimension - (temp.x % x_dimension);
-            }
-            else continue;
+            horizontalSeed = evenVerticalSeed;
+            evenVerticalSeed+=3;
         }
-        if (temp.x >= x_dimension)
+        else
         {
-            if (!flat_earth)
-            {
-                temp.x %= x_dimension;
-            }
-            else continue;
+            horizontalSeed = oddVerticalSeed;
+            oddVerticalSeed +=3;
         }
-
-        // Insert the resulting coordinates in the vector
-        out.push_back(temp);
+           
+        for (int x = y % 2; x < getWidth(); x+=2)
+        {
+            int offset = XYtoOffset(x,y);
+            if ( (horizontalSeed / 2) % 2 == 0)
+            {
+                resource_map[offset] |= GRASS_SHIELD_FLAG;
+            }
+            else
+            {
+                resource_map[offset] &= (~GRASS_SHIELD_FLAG);
+            }
+            horizontalSeed ++;
+        }
     }
+}
+
+///////////////////////// RingIterator Methods ////////////////////////////////
+
+// Ring Iterator iterates through the squares adjacent to a square in a ring
+// pattern. It starts out at the intialized point, moves up to the next ring,
+// and then clock wise: Like so:
+ 
+//                         19  20 9
+//                      18  7  8  1 10 
+//                      17  6  0  2 11
+//                      16  5  4  3 12
+//                         15 14 13
+// Note that corners of the outer most ring are not included, except for the
+// inner most ring. This is to be consistent with the way Civ 2 
+// computes a city radius. (The above diagram is slighly tilted from
+// the Civ2 Isometric view, think of the above shape as a city radius. So
+// up in this view is really northwest in the Civ2 isometric view).
+
+// The iterator also maintains a distance from the center point, which is 0
+// at the center point, 1 in the first ring, 2 in the second ring and so on.
+
+// Constructor, set up a RingIterator with a given point as its center
+Civ2Map::RingIterator::RingIterator(int x, int y, Civ2Map& m)
+ : map(m)
+{
+    centerX = x;
+    centerY = y;
+    reset();
+}
+
+// Copy constructor
+Civ2Map::RingIterator::RingIterator(const RingIterator& ri)
+ : map(ri.map)
+{
+    centerX = ri.centerX;
+    centerY = ri.centerY;
+    endRingX = ri.endRingX;
+    endRingY = ri.endRingY;
+    curX = ri.curX;
+    curY = ri.curY;
+    distance = ri.distance;
+    direction = ri.direction;
+    atCorner = ri.atCorner;
+}
+
+// Resets the iterator to the center point
+void Civ2Map::RingIterator::reset()
+{
+    curX = centerX;
+    curY = centerY;
+    endRingX = centerX;
+    endRingY = centerY;
+    distance = 0;
+    direction = 0;
+    atCorner = false;
+}
+
+// Accessors for current position and distance
+int Civ2Map::RingIterator::getX() { return curX; }
+int Civ2Map::RingIterator::getY() { return curY; }
+int Civ2Map::RingIterator::getDistance() { return distance; }
+
+// Move to the next point in the ring pattern
+void Civ2Map::RingIterator::moveToNextPoint() throw (runtime_error)
+{
+    // Loop until a point on the map is found
+    bool offMap = true;
+    bool startRingOffMap = false;  // True if this ring started off the map
+    bool foundOnMap = true; // True if a point in this ring was on the map
+    while (offMap)
+    {
+        // If we're at the end of a ring, time to move to the next ring
+        // Note the end of the ring is always the top of the ring.
+        if (endRingX == curX && endRingY == curY)
+        {
+            distance++;
+
+            // Move top of ring to the top of the next ring
+            // Not the direction: 0 = right, 1 = down, 2 = left, 3 = up
+            if (movePoint(endRingX, endRingY,3, 1))
+            {
+                // We're starting at a square that's off the map, that's okay
+                // if we're near the poles, but it's important to check for
+                // a ring that's entirely off the map. That's what startRingOffMap
+                // and foundOnMap are for
+
+                if (startRingOffMap == true && foundOnMap == false)
+                {
+                    // The last ring started off the map, and never found a
+                    // square on the map, so we've gone past the edge of the map
+                    // That puts this iterator into an infinite loop, so throw
+                    // an exception 
+                    throw runtime_error("RingIterator went completely off map.");
+                }
+                // otherwise, keep a note that this ring started off the map 
+                startRingOffMap = true;
+            }
+            else
+            {
+                startRingOffMap = false;
+            }
+
+            // Move current point to the square right of the end of the ring
+            // For the inner ring, this includes the conrer point, just like Civ2
+            direction = 0;
+            curX = endRingX;
+            curY = endRingY;
+            offMap = movePoint(curX, curY, direction, 1);
+            if (distance == 1) 
+            {
+                // We moved to the conrer point of the inner ring,
+                // the next direction should be down (or up)
+                direction++;
+            }
+        }
+        else // Not at the end of the ring, move along this ring
+        {
+            // Check for being in a gap left by an inner ring
+            // In this case reverse direction to go outside of the gap
+            if (atCorner)
+            {
+                // Moving forwards twice in the direction yeilds a direction
+                // in the opposite direction
+                direction+=2;
+                if (direction > 3) direction %= 4;
+                
+                offMap = movePoint(curX, curY, direction, 1);
+
+                // Now move to the next direction to continue going along the ring
+                direction++;
+                if (direction > 3) direction = 0;
+
+                atCorner = false;
+            }
+            else // Not in a gap
+            {
+                offMap = movePoint(curX, curY, direction, 1);
+
+                // Check for a corner point
+                if (curX == centerX || curY == centerY)
+                {
+                    // We just entered the  corner, change direction
+                    direction++;
+                    if (direction > 3) direction = 0;
+
+                    // Skip over corner points (note that for the inner ring it wll be included)
+                    if (distance != 1)
+                    {
+                        offMap = movePoint(curX, curY, direction, 1);
+
+                        // If we're at distance > 2, there's a gap from the inside ring to fill
+                        if (distance > 2)
+                        {
+                           direction++;
+                           if (direction > 3) direction = 0;
+                           offMap = movePoint(curX, curY, direction, 1);
+                           atCorner = true; // signals for the next call to move back out of the gap.
+                        }
+                    }
+                }// end if at a corner point
+            } // end if in gap
+        } // end if at end of ring
+
+        if (!offMap) foundOnMap = true;
+
+    } // end while(offMap)
+}
+
+// Moves a given x,y point a given distance in a given direction. It will
+// perform the neccessary wrapping across the "dateline" at x = 0
+// (if this is not a flat earth).
+//  It will also return true if the point is off the map
+// (by either being past the poles in the y axis, or past a flat earth in 
+// the x axis).
+// It takes a reference to the x, y coordinates to move, and a direction
+// (0 = right, 1 = down, 2 = left, 3 = up)
+bool Civ2Map::RingIterator::movePoint(int &x, int&y, const int& direction, const int &distance)
+{
+    static const int deltaX[4] = { 1,  1, -1, -1};
+    static const int deltaY[4] = {-1,  1,  1, -1};
+
+    // Move the point
+    x += (distance * deltaX[direction]);
+    y += (distance * deltaY[direction]);
+
+    // Wrap the point
+    bool offMap = false;
+    if (x < 0 ||
+        ((y%2 == 1) && x <1) ) // If y is odd, x must start at 1
+    {
+        if (!map.isFlat())
+        {
+            x = map.getWidth() - ((-x) % map.getWidth());
+        }
+        else offMap = true;
+    }
+    if (x >= map.getWidth() ||
+        ( (y%2 == 0) && x == (map.getWidth()-1)  ) ) // If y is even x starts at 0, and so cannot reach mapWidth -1
+    {
+        if (!map.isFlat())
+        {
+            x %= map.getWidth();
+        }
+        else offMap = true;
+    }
+    if (y < 0 || y >= map.getHeight()) offMap = true; 
+    return offMap;
 }

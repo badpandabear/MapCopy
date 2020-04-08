@@ -31,6 +31,7 @@
 // Feb/10/2005  JDR  Changes for compatability with GCC based mingw compiler.
 // Feb/13/2005  JDR  Added options for resource supression
 // Feb/20/2005  JDR  1.2Beta1 release of ToT multi-map support
+// Jul/02/2005  JDR  1.2 final version.
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -40,7 +41,7 @@
 
 const char *versionText[] =
 {
-    "MapCopy Version 1.2Beta2",
+    "MapCopy Version 1.2",
     "Written By James Dustin Reichwein, Copyright (C) 2000,2005. All Rights Reserved.",
     NULL
 };
@@ -60,7 +61,8 @@ const char *helpText[] =
     "    cs              Copies civilization start locations from an MP file.",
     "    bc              Copies \"body counter\" values for continents.",
     "    cr              Copies \"city radius\" data for terrain.",
-    "    v[erbose]       Enables informative screen messages.",
+    "    verb[ose][:DEV] Enables informative screen messages. Using 'DEV' results",
+    "                    in a very verbose output meant for debugging mapcopy.",
     "    b[ackup]        Creates of a backup named \"dest.bak\". (on by default)",
     "    /? or -h        Displays this help screen.",
     "    f[ertility][:CALC|CALCALL|ADJUST|ZERO]",
@@ -79,7 +81,7 @@ namespace
                    CIV_START, BODY_COUNTER, CITY_RADIUS, VERBOSE, BACKUP,
                    FERTILITY, CIV_VIEW, RESOURCE_SUP, NUM_OPTIONS };
     enum OP_VALUE { OFF=0, ON=1, COPY=1, CALC, CALCALL, ADJUST, CURRENT, ZERO,
-                    SET, CLEAR };
+                    SET, CLEAR, DEV };
 
     // The options
     OP_VALUE options[NUM_OPTIONS];
@@ -134,6 +136,7 @@ void printText(const char *text[]);
 void printErrorMessage(const string message);
 void backupFile(string file) throw (runtime_error);
 void doMapCopy(const Civ2Map& source, Civ2Map& dest) throw(runtime_error);
+void logFileDetails(const Civ2SavedGame& file);
 
 int main(int argc, char *argv[])
 {
@@ -152,18 +155,21 @@ int main(int argc, char *argv[])
         parseCommandLine(argc, argv);
         
         // This tells the Civ2SavedGame objects whether to print detailed messages
-        if (options[VERBOSE]== ON)
+        if (options[VERBOSE]== ON || options[VERBOSE] == DEV)
         {
             LogOutput::setOutputStream(cout);
-            LogOutput::setEnabled(true);
+            LogOutput::enableLevel(NORMAL);
+            if (options[VERBOSE] == DEV) LogOutput::enableLevel(DEBUG);
         }
-
+            
         if (options[BACKUP] == ON) backupFile(destFile);
 
         // Load a source file if one is provided
         if (copy_type != MP && copy_type != SAV) 
         {
+            LogOutput::log(NORMAL) << "Loading File: " << sourceFile << endl;
             one->load(sourceFile);
+            logFileDetails(*one);
         }
         else // An in-place modification
         {
@@ -171,14 +177,18 @@ int main(int argc, char *argv[])
         }
         if (fileExists(destFile))
         {
+            LogOutput::log(NORMAL) << "Loading File: " << destFile << endl;
             two->load(destFile);
+            logFileDetails(*two);
         }
         else if (Civ2SavedGame::isMPFile(destFile))
         {
+            LogOutput::log(NORMAL) << "Creating MP File: " << destFile << endl;
             two->createMP(one->getWidth(), one->getHeight());
         }
         else
         {
+            LogOutput::log(NORMAL) << "Creating SAV File: " << destFile << endl;
             two->createSAV(one->getWidth(), one->getHeight());
         }
 
@@ -239,13 +249,13 @@ int main(int argc, char *argv[])
 
             if (destMap > two->getNumMaps())
             {
-                LogOutput::log() << "Adding map " << destMap << " to " << destFile << endl;
+                LogOutput::log(NORMAL) << "Adding map " << destMap << " to " << destFile << endl;
 
                 two->addMap(destMap  - 1); // Add additional map to destination
                                           // if needed
             }
 
-            LogOutput::log() << "Copying map " << sourceMap << " to " << destMap << endl;            
+            LogOutput::log(NORMAL) << "Copying map " << sourceMap << " to " << destMap << endl;            
 
             // Do the actual copy.
             doMapCopy(one->getMap(sourceMap - 1), two->getMap(destMap - 1));
@@ -258,22 +268,22 @@ int main(int argc, char *argv[])
             {
                 if (i >= two->getNumMaps())
                 {
-                    LogOutput::log() << "Adding map " << i + 1 << " to " << destFile << endl;
+                    LogOutput::log(NORMAL) << "Adding map " << i + 1 << " to " << destFile << endl;
 
                     two->addMap(i); // Add additional map to destination
                                    // if needed
                 }
-                LogOutput::log() << "Copying map " << i+1 << " to " << i+1 << endl;            
+                LogOutput::log(NORMAL) << "Copying map " << i+1 << " to " << i+1 << endl;            
                 doMapCopy(one->getMap(i), two->getMap(i));
             }
         }
-        // Copying multiple source maps into the destination file
+        // Copying one source map over all maps in the destination file
         else if (sourceMap != 0 && destMap == 0)
         {
             Civ2Map& source = one->getMap(sourceMap-1);
             for (int i = 0; i < two->getNumMaps(); i++)
             {
-                LogOutput::log() << "Copying map " << sourceMap << " to " << i + 1 << endl;  
+                LogOutput::log(NORMAL) << "Copying map " << sourceMap << " to " << i + 1 << endl;  
                 doMapCopy(source, two->getMap(i));
             }
         }
@@ -295,7 +305,7 @@ int main(int argc, char *argv[])
         {
             two->setSeed(two->getMap(0).getSeed());
         }
-        
+                
         // Save the results into the destination file
         two->save(destFile);
     }
@@ -323,6 +333,9 @@ int main(int argc, char *argv[])
 // Performs a copy between two Civ2Map objects
 void doMapCopy(const Civ2Map& source, Civ2Map& dest) throw(runtime_error)
 {
+    // Set to true if a second pass through the map is needed
+    bool secondPassNeeded = false;
+
     // Copy map specific resource seed
     if (options[SEED] == COPY) dest.setSeed(source.getSeed());
 
@@ -339,7 +352,7 @@ void doMapCopy(const Civ2Map& source, Civ2Map& dest) throw(runtime_error)
             if (options[TERRAIN]==COPY)
             {
                 dest.setRiver(x, y, source.isRiver(x, y));
-                dest.setTypeIndex(x, y, source.getTypeIndex(x, y));
+                dest.setTerrainType(x, y, source.getTerrainType(x, y));
             }
             if (options[IMPROVEMENT] == COPY)
             {
@@ -375,29 +388,15 @@ void doMapCopy(const Civ2Map& source, Civ2Map& dest) throw(runtime_error)
                     break;
 
                 case CALC:
-                    if (dest.getTypeIndex(x, y) == Civ2Map::GRASSLAND ||
-                        dest.getTypeIndex(x, y) == Civ2Map::PLAINS)
-                    {
-                        dest.calcFertility(x, y);
-                    }
-                    else dest.setFertility(x, y, 0);
+                    secondPassNeeded = true;
                     break;
 
                 case CALCALL:
-                    if (dest.getTypeIndex(x, y) != Civ2Map::OCEAN)
-                    {
-                        dest.calcFertility(x, y);
-                    }
-                    else dest.setFertility(x, y, 0);
+                    secondPassNeeded = true;
                     break;
 
-                    case ADJUST:                      
-                    if (dest.getTypeIndex(x, y) != Civ2Map::OCEAN)
-                    {
-                        dest.setFertility(x, y, source.getFertility(x, y));
-                        dest.adjustFertility(x, y);
-                    }
-                    else dest.setFertility(x, y, 0);
+                case ADJUST:                      
+                    secondPassNeeded = true;
                     break;
 
                 case ZERO:
@@ -464,6 +463,52 @@ void doMapCopy(const Civ2Map& source, Civ2Map& dest) throw(runtime_error)
             } // end switch on resource supression
         } // end inner for
     } // end outer for
+
+    // Do a second pass for fertility calculations. Since the calculations
+    // for a square depend on adjacent suqares, all squares be in their 
+    // final state before calculations can be made. Hence a second pass is used.
+    if (secondPassNeeded)
+    {
+        for (int y = 0; y < dest.getHeight(); y++)
+        {
+            for (int x = y % 2; x < dest.getWidth(); x+=2)
+            {
+                switch (options[FERTILITY])
+                {
+                    case CALC:
+                        if (dest.getTerrainType(x, y) == GRASSLAND ||
+                            dest.getTerrainType(x, y) == PLAINS)
+                        {
+                            dest.calcFertility(x, y);
+                            dest.adjustFertility(x, y);
+                        }
+                        else dest.setFertility(x, y, 0);
+                        break;
+
+                    case CALCALL:
+                        if (dest.getTerrainType(x, y) != OCEAN)
+                        {
+                            dest.calcFertility(x, y);
+                            dest.adjustFertility(x, y);
+                        }
+                        else dest.setFertility(x, y, 0);
+                        break;
+
+                    case ADJUST:                      
+                        if (dest.getTerrainType(x, y) != OCEAN)
+                        {
+                            dest.setFertility(x, y, source.getFertility(x, y));
+                            dest.adjustFertility(x, y);
+                        }
+                        else dest.setFertility(x, y, 0);
+                        break;
+                    default:
+                        // No fertility calculations needed. 
+                        break;
+                } // end switch
+            } // end inner for loop
+        } // end outer for loop
+    } // end check for second pass
 }
 // end doMapCopy
 
@@ -630,9 +675,11 @@ void parseOptions(int index, int argc, char *argv[])
         {
             options[CITY_RADIUS] = value;
         }
-        else if ( o == "verb" || o == "verbose")
+        else if ( o.compare(0,4, "verb")==0 )
         {
-            options[VERBOSE] = value;
+            int colon = o.find_first_of(':');
+            if (colon != string::npos && o.compare(colon, string::npos, ":dev") == 0) options[VERBOSE]=DEV;
+            else options[VERBOSE] = value;
         }
         else if ( o == "b" || o == "backup")
         {
@@ -771,7 +818,26 @@ void checkArgumentValidity()
     }
 }
 
+// Display information about a saved game information
+void logFileDetails(const Civ2SavedGame& file)
+{
+    int width = file.getWidth();
+    int height = file.getHeight();
+    
+    if (file.isMapOnly())
+    {
+        LogOutput::log(NORMAL) << width << " by " << height << " MP file." << endl;
+    }
+    else
+    {
+        string shape = " round ";
+        if (file.isFlatEarth()) shape = " flat ";
 
+        LogOutput::log(NORMAL) << width << " by " << height << " " 
+                               << file.getVersionString() << shape << "earth SAV/SCN file with " 
+                               << file.getNumMaps() << " maps." << endl;
+    }
+}
 // Displays an array of strings, one line at a time. Stops when it hits a
 // NULL string
 void printText(const char *text[])
@@ -805,7 +871,7 @@ void backupFile(string file) throw (runtime_error)
         return;
     }
 
-    LogOutput::log() << "Backing up." << endl;
+    LogOutput::log(NORMAL) << "Backing up '" << file << "'." << endl;
 
     char *backup_buffer = new char[BACKUP_BUFFER_SIZE];
 
