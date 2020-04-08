@@ -17,6 +17,7 @@
  * Rights Reserved.
  * 
  * Contributor(s): 
+ * Jorrit "Mercator" Vermeiren
  */
 
 // civ2sav.h
@@ -172,6 +173,10 @@ class Civ2SavedGame
             Tuple() {x=0; y=0;}
         };
 
+		// MERCATOR
+		// Added loadMapHeaderOffset function declaration
+		void loadMapHeaderOffset(istream& is)
+			throw (runtime_error);
         void loadMapHeader(istream& is)
             throw(runtime_error);
         void saveMapHeader(ostream& os) const
@@ -198,6 +203,16 @@ class Civ2SavedGame
         SmartPointer<Improvements,true> civ_view_map;
         bool verbose;
         bool isMP;
+
+		// MERCATOR
+		// I added the following 3 variables to fully support all civ2 versions:
+		// - version: The savegame version number
+		// - map_header_offset: The offset isn't the same in all versions, nor
+		//   is it a constant in the ToT savegames, so I have to use a variable.
+		// - secondary_maps: The 8th map header value used only in ToT.
+		unsigned short version;
+		unsigned int map_header_offset;
+		unsigned short secondary_maps;
 
 };
 

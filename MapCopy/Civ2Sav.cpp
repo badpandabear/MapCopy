@@ -16,7 +16,8 @@
  * Copyright (C) 2000, James Dustin Reichwein.  All
  * Rights Reserved.
  * 
- * Contributor(s): 
+ * Contributor(s):
+ * Jorrit "Mercator" Vermeiren
  */
 
 // civ2sav.cpp
@@ -28,12 +29,38 @@
 //
 // Revision History:
 // Sep/13/2000 JDR  Initial 1.Beta1 version.
+// Aug/27/2004 JMV  Added support for pre-FW and ToT Civ2 saved game files.
+//                  The only restriction now is that the secondary maps in
+//                  multi-map ToT games can not be accessed.
+//                  Code changes marked with "MERCATOR".
 
 #include "civ2sav.h"
 
 /////////////////////// Civ2SavedGame Constants ///////////////////////////////
 
-const long FW_MAP_HEADER_OFFSET = 0x3586;
+
+
+
+
+
+
+
+
+// MERCATOR
+// Added file version constants and offset constants.
+// FW_MAP_HEADER_OFFSET renamed to MGE_MAP_HEADER_OFFSET for no good reason
+// except to get the two map header offset constants to line up nicely.
+const unsigned short CIC_VERSION = 0x27;
+const unsigned short FW_VERSION = 0x28;
+const unsigned short MGE13_VERSION = 0x2C;
+const unsigned short TOT10_VERSION = 0x31;
+const unsigned short TOT11_VERSION = 0x32;
+
+const long CIC_MAP_HEADER_OFFSET = 0x3478;
+const long MGE_MAP_HEADER_OFFSET = 0x3586;
+const long TOT10_TRANSPORTERS_OFFSET = 0x7420;
+const long TOT11_TRANSPORTERS_OFFSET = 0x74C8;
+
 const unsigned char RIVER_FLAG = 0x80;
 const unsigned char NO_RESOURCE_FLAG = 0x40;
 const unsigned char TERRAIN_TYPE_MASK = 0x3F;
@@ -83,7 +110,10 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
     // Seek within a saved game file for the map header
     if (!isMP)
     {
-        theFile.seekg(FW_MAP_HEADER_OFFSET);
+		// MERCATOR
+		// Find out offset and seek to it.
+		loadMapHeaderOffset(theFile);
+		theFile.seekg(map_header_offset);
 
         if (!theFile) throw runtime_error(string("Error accessing file: ")
                                           +=filename);
@@ -135,18 +165,22 @@ void Civ2SavedGame::load(const string& filename) throw (runtime_error)
 //        complete file from scratch.
 //        For MP files, it can create the file, but if the file exists, it will
 //        not write over existing civilization start information.
+//
+// MERCATOR
+// Changed ofstream to fstream, since in case of a sav/scn I will need to read
+// the file to find out which offset I need to write to.
 
 void Civ2SavedGame::save(const string& filename) throw (runtime_error)
 {
-    ofstream theFile;
+    fstream theFile;
 
     if (isMP)
     {
-        theFile.open(filename.c_str(), ios_base::binary);
+        theFile.open(filename.c_str(), ios_base::binary | ios::out);
     }
     else
     {
-        theFile.open(filename.c_str(), ios_base::binary | ios_base::nocreate | ios::ate);
+        theFile.open(filename.c_str(), ios_base::binary | ios_base::nocreate | ios::in | ios::out);
     }
 
     if (!theFile) throw runtime_error(string("Could not open file: ")
@@ -154,7 +188,8 @@ void Civ2SavedGame::save(const string& filename) throw (runtime_error)
 
     if (!isMP)
     {
-        theFile.seekp(FW_MAP_HEADER_OFFSET);
+		loadMapHeaderOffset(theFile);
+        theFile.seekp(map_header_offset);
 
         if (!theFile) throw runtime_error(string("Error accessing file: ")
                                           +=filename);
@@ -767,6 +802,57 @@ void Civ2SavedGame::setCivView(int x, int y, Civilization c, Improvements i) thr
 
 ////////////////////////// Private Helper Functions ///////////////////////////
 
+// MERCATOR
+// Gets the offset of the map header in a savegame.
+// Stores values into <version> and <map_header_offset> variables.
+
+void Civ2SavedGame::loadMapHeaderOffset(istream& is) throw (runtime_error)
+{
+	unsigned int transporters;
+
+	// Go to version number offset (0x0A)
+	is.seekg(10);
+	if (!is) throw runtime_error("Read error.");
+
+	// Read version into private object variable
+	is.read( (char *) &version, sizeof(short));
+    if (is.gcount() != sizeof(short)) throw runtime_error("Read error.");
+
+	// Set map header offset depending on file version
+	switch(version)
+	{
+		case CIC_VERSION:
+			map_header_offset = CIC_MAP_HEADER_OFFSET;
+			break;
+		case FW_VERSION:
+		case MGE13_VERSION:
+			map_header_offset = MGE_MAP_HEADER_OFFSET;
+			break;
+		case TOT10_VERSION:
+			is.seekg(TOT10_TRANSPORTERS_OFFSET);
+			if (!is) throw runtime_error("Read error.");
+
+			is.read( (char *) &transporters, sizeof(int));
+			if (is.gcount() != sizeof(int)) throw runtime_error("Read error.");
+
+			map_header_offset = TOT10_TRANSPORTERS_OFFSET + 4 + (transporters * 14);
+			break;
+		case TOT11_VERSION:
+			is.seekg(TOT11_TRANSPORTERS_OFFSET);
+			if (!is) throw runtime_error("Read error.");
+
+			is.read( (char *) &transporters, sizeof(int));
+			if (is.gcount() != sizeof(int)) throw runtime_error("Read error.");
+
+			map_header_offset = TOT11_TRANSPORTERS_OFFSET + 4 + (transporters * 14);
+			break;
+		default:
+			// Whoops... the version needs to be converted to a string somehow.
+			throw runtime_error(string("Unrecognized savegame/scenario version number: ")
+								+= version);
+	}
+}
+
 // Loads the map header from an istream.  This asumes the read pointer for
 // the istream is at the correct location.
 
@@ -783,6 +869,16 @@ void Civ2SavedGame::loadMapHeader(istream& is) throw(runtime_error)
 
     header = p.releaseControl();
 
+	// MERCATOR
+	// Also read 8th header value for ToT files.
+	if (version == TOT10_VERSION || version == TOT11_VERSION)
+	{
+		is.read( (char *) &secondary_maps, sizeof(short));
+
+		if (is.gcount() != sizeof(short))
+        throw runtime_error("Read error.");
+	}
+
     if (verbose)
     {
         cout << "X Dimension is: " << header->x_dimension << endl;
@@ -792,6 +888,11 @@ void Civ2SavedGame::loadMapHeader(istream& is) throw(runtime_error)
         cout << "Map Seed is: " << header->map_seed << endl;
         cout << "locator x dim is: " << header->locator_x_dimension << endl;
         cout << "locator y dim is: " << header->locator_y_dimension << endl;
+
+		// MERCATOR
+		// Also write 8th header value for ToT files.
+		if (version == TOT10_VERSION || version == TOT11_VERSION)
+			cout << "Secondary Maps: " << secondary_maps << endl;
     }
 }
 
@@ -829,6 +930,17 @@ void Civ2SavedGame::saveMapHeader(ostream& os) const throw(runtime_error)
     os.write(reinterpret_cast<const unsigned char *>(header.get()), sizeof(MapHeader));
     if (!os)
         throw runtime_error("Write Error.");
+
+	// MERCATOR
+	// Skip forward two bytes (i.e. the 8th map header value) if we are
+	// dealing with a ToT savegame/scenario.
+	if (!isMP && (version == TOT10_VERSION || version == TOT11_VERSION))
+	{
+		os.seekp(sizeof(short), ios::cur);
+		if (!os)
+			throw runtime_error("Write Error.");
+	}
+
 
     if (verbose) cout << "Wrote header "  << endl;
 
