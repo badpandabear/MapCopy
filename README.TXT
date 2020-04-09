@@ -54,7 +54,7 @@ Introduction
   http://home.san.rr.com/dustyr/download/mapcopy.zip
 
   For additional information on the contents of saved game file, I recommend
-  Allard Höfelt's hex editing document. The latest version (that I could find)
+  AllardHÃ¶felt's hex editing document. The latest version (that I could find)
   of this is at Mercator's Civilization 2 Site 
   (http://www.civgaming.net/mercator/) in the Reference section.
 
@@ -70,7 +70,7 @@ Compatibility
 
 I would like to thank...
 
-  Allard Höfelt for making the hex editing document.
+  Allard HÃ¶felt for making the hex editing document.
 
   Jorrit "Mercator" Vermeiren for adding adding additional functionality to 
   MapCopy and for providing much information about ToT saved game files.

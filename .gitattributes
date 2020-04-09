@@ -15,6 +15,7 @@
 *.DEV text eol=crlf
 *.layout text eol=crlf
 *.LAYOUT text eol=crlf
+*.md text eol=lf
 
 # Denote all files that are truly binary and should not be modified.
 *.png binary
