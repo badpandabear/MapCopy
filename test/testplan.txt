@@ -1,4 +1,4 @@
-tst Plan:
+Rest Plan:
 
 Test:
 Test 1: no arguments
@@ -18,16 +18,11 @@ Test 3fw Copying each item individually.
 3.8fw  body counter
 3.9fw  city_radius
 3.10fw civ view current
-3.11fw fertility calc
-3.12fw fertility calcall
-3.13fw fertility adjust
-3.14fw fertility copy
-3.15fw fertility zero
 
 test 4fw: Arguments that only need one file. (and defaults for these cases)
 4.1fw civ view current
-4.2fw fertiltiy calc
-4.3fw fertility calcall
+4.2fw resource supression set
+4.2fw resource supression clear
 4.4fw fertility zero
 
 
@@ -41,7 +36,7 @@ test 4fw: Arguments that only need one file. (and defaults for these cases)
 6.1fw start positions in sav
 5.2fw civ view on MP
 6.3fw mismatched sizes
-6.4fw copies on single file
+6.4fw copies on single file (these are okay now)
 
 7fw: test bitfields
 turn on pollution/irrigation for all squares
@@ -50,8 +45,29 @@ set everything visible to white, nothing visible to others
 Retest for MGE files.
 
 8: Cross Compatibility
-8.1 test MP ->MGE SAV
-8.2 test MGE SAV-> MP
-8.3 test MGE SAV ->FW SAV
-8.4 test FW SAV -> MGE SAV
+8.1 test MGE SAV-> MP
+8.2 test MGE SAV ->FW SAV
+8.3 test FW SAV -> MGE SAV
+8.4 Test ToT SAV -> FW SAV (ToT is a multimap sav)
+8.5 Test MGE SAV -> ToT Sav (ToT is a multimap sav)
 
+Test 9: Test city radius/extended radius calculations in flat and round worlds
+
+Test 10: Fertility Test
+10.1: Test fertility calculation on a map.
+10.2: Test calculation when copying map to a saved game with a city.
+10.3: Test copying fertility from a map to a saved game with ADJUST parameter.
+10.4: Test zeroing fertility
+10.5: Test "CALCALL"
+
+Test 11: Test ToT Multimap copies
+11.1: Copying maps out of a ToT game, default params
+11.2: Copying maps into a ToT game, default params
+11.3: Copying maps out of a ToT game, all params
+11.4: Copying maps into a ToT game, all params
+11.5: Adding maps to a ToT game.
+11.6: Pulling maps out of a ToT game.
+11.7: Copying a map into a single pre-existing ToT map slot.
+11.8: Copying a multi-map ToT sav to a single map ToT SAV
+11.9: Copy a MP into a multimap ToT with destination ALL
+11.10: Copy a multi-map ToT game into a multi-map ToT game.

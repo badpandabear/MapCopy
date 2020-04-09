@@ -47,25 +47,29 @@ set st=4
 
 ..\mapcopy test6%11.sav +t -verbose > nul
 
-if not errorlevel 1 goto fail
+if errorlevel 2 goto fail
+if errorlevel 1 goto fail
+if not errorlevel 0 goto fail
 
 ..\mapcopy biggrass.mp +f:adjust -verbose > nul
 
-if not errorlevel 1 goto fail
+if errorlevel 2 goto fail
+if errorlevel 1 goto fail
+if not errorlevel 0 goto fail
 
 set st=5
 
-cmp biggrass.mp perm\biggrass.mp
+FC /B biggrass.mp perm\biggrass.mp > nul
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
 if not errorlevel 0 goto fail
 
-cmp mount.mp perm\mount.mp
+FC /B mount.mp perm\mount.mp > nul
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
 if not errorlevel 0 goto fail
 
-cmp test6%11.sav perm\test6%11.sav
+FC /B test6%11.sav perm\test6%11.sav > nul
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
 if errorlevel 0 goto passed

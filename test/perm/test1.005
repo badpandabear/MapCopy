@@ -1,0 +1,44 @@
+Backing up 'tot_multiple1.sav'.
+Loading File: tot_map1.mp
+X Dimension is: 100
+Y Dimension is: 80
+Map Area is: 4000
+Flat Earth is: 0
+Map Seed is: 27782
+locator x dim is: 25
+locator y dim is: 20
+Loaded start positions.
+Read terrain map
+100 by 80 MP file.
+Loading File: tot_multiple1.sav
+X Dimension is: 100
+Y Dimension is: 80
+Map Area is: 4000
+Flat Earth is: 0
+Map Seed is: 27782
+locator x dim is: 25
+locator y dim is: 20
+Secondary Maps: 3
+Read civ view map.
+Read terrain map
+Map 1 seed is 27782
+Read civ view map.
+Read terrain map
+Map 2 seed is 27782
+Read civ view map.
+Read terrain map
+Map 3 seed is 27782
+Read civ view map.
+Read terrain map
+Map 4 seed is 27782
+100 by 80 ToT 1.1 round earth SAV/SCN file with 4 maps.
+Copying map 1 to 1
+Wrote header.
+Wrote civ_view_map 
+Wrote terrain map.
+Wrote civ_view_map 
+Wrote terrain map.
+Wrote civ_view_map 
+Wrote terrain map.
+Wrote civ_view_map 
+Wrote terrain map.

@@ -6,7 +6,7 @@ copy perm\biggrass.mp . > nul
 
 ..\mapcopy biggrass.mp temp.mp -verbose
 
-cmp biggrass.mp temp.mp
+fc /B biggrass.mp temp.mp > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -21,7 +21,7 @@ copy perm\biggrass.mp . > nul
 
 ..\mapcopy biggrass.mp test5%11.sav -verbose 
 
-cmp test5%11.sav perm\test5%11.002
+fc /B test5%11.sav perm\test5%11.002 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -36,7 +36,7 @@ copy perm\test5%11.sav . > nul
 
 ..\mapcopy test5%11.sav temp.mp -verbose
 
-cmp temp.mp perm\test5.003
+fc /B temp.mp perm\test5.003 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -50,7 +50,7 @@ copy perm\test5%1?.sav . > nul
 
 ..\mapcopy test5%11.sav test5%12.sav -verbose
 
-cmp test5%12.sav perm\test5%12.004
+fc /B test5%12.sav perm\test5%12.004 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail

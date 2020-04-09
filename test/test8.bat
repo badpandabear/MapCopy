@@ -2,25 +2,24 @@
 
 set st=1
 
-copy perm\biggrass.mp . > nul
 copy perm\test8mg1.sav . > nul
 
-..\mapcopy biggrass.mp test8mg1.sav -verbose 
+..\mapcopy test8mg1.sav temp.mp -verbose 
 
-cmp test8mg1.sav perm\test8mg1.001
+fc /B temp.mp perm\test8.002 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
 if not errorlevel 0 goto fail
 
-
 set st=2
 
+copy perm\test8fw1.sav . > nul
 copy perm\test8mg1.sav . > nul
 
-..\mapcopy test8mg1.sav temp.mp -verbose 
+..\mapcopy test8mg1.sav test8fw1.sav -verbose 
 
-cmp temp.mp perm\test8.002
+fc /B test8fw1.sav perm\test8fw1.003 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -31,28 +30,38 @@ set st=3
 copy perm\test8fw1.sav . > nul
 copy perm\test8mg1.sav . > nul
 
-..\mapcopy test8mg1.sav test8fw1.sav -verbose 
+..\mapcopy test8fw1.sav test8mg1.sav -verbose 
 
-cmp test8fw1.sav perm\test8fw1.003
+fc /B test8mg1.sav perm\test8mg1.004 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
 if not errorlevel 0 goto fail
 
 set st=4
+copy perm\test8tot1.sav . > nul
+copy perm\test8fw.sav . > nul
 
-copy perm\test8fw1.sav . > nul
+..\mapcopy test8fw1.sav test8tot1.sav -verbose -backup 
+
+fc /B test8tot1.sav perm\test8tot2.sav > nul
+
+if errorlevel 2 goto fail
+if errorlevel 1 goto fail
+if not errorlevel 0 goto fail
+
+set st=5
+copy perm\test8tot1.sav . > nul
 copy perm\test8mg1.sav . > nul
 
-..\mapcopy test8fw1.sav test8mg1.sav -verbose 
+..\mapcopy test8tot1.sav test8mg1.sav -verbose -backup
 
-cmp test8mg1.sav perm\test8mg1.004
+fc /B test8mg1.sav perm\test8mg1.005 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
 if errorlevel 0 goto passed
 
-set st=5
 
 :fail
 echo test 8.%st% failed

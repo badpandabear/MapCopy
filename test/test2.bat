@@ -7,7 +7,7 @@ del test2%12.sav.bak > nul
 
 ..\mapcopy test2%11.sav test2%12.sav +s +t +i +v +o +bc +cr +f +cv -verbose
 
-cmp test2%12.sav test2%11.sav
+fc /B test2%12.sav test2%11.sav > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -17,7 +17,7 @@ goto :fail
 :sub2
 set st=2
 
-cmp test2%12.sav.bak perm\test2%12.sav
+fc /B test2%12.sav.bak perm\test2%12.sav > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -31,7 +31,7 @@ copy perm\test2fw?.mp . > nul
 
 ..\mapcopy test2fw1.mp test2fw2.mp +s +t +i +v +o +bc +cr +f +cs -verbose -backup
 
-cmp test2fw1.mp test2fw2.mp
+fc /B test2fw1.mp test2fw2.mp > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail

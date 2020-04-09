@@ -6,7 +6,7 @@ copy perm\test4%11.sav . > nul
 
 ..\mapcopy test4%11.sav -verbose +cv:CURRENT
 
-cmp test4%11.sav perm\test4%11.001
+fc /B test4%11.sav perm\test4%11.001 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -16,11 +16,11 @@ goto done
 
 set st=2
 
-copy perm\biggrass.mp . > nul
+copy perm\mount.mp . > nul
 
-..\mapcopy biggrass.mp -verbose +fertility:calc
+..\mapcopy mount.mp -verbose +rs:set
 
-cmp biggrass.mp perm\test4.002
+fc /B mount.mp perm\test4.002 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -30,11 +30,9 @@ goto done
 
 set st=3
 
-copy perm\mount.mp . > nul
+..\mapcopy mount.mp -verbose +rs:clear
 
-..\mapcopy mount.mp -verbose +fertility:calcall
-
-cmp mount.mp perm\test4.003
+fc /B mount.mp perm\mount.mp > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
@@ -48,7 +46,7 @@ copy perm\biggrass.mp . > nul
 
 ..\mapcopy biggrass.mp -verbose +fertility:zero
 
-cmp biggrass.mp perm\test4.004
+fc /B biggrass.mp perm\test4.004 > nul
 
 if errorlevel 2 goto fail
 if errorlevel 1 goto fail
